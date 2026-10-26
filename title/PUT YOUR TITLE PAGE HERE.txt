@@ -1,0 +1,2 @@
+Save your title-page artwork in this folder as title-page.png (or .jpg / .webp / .svg / .gif).
+It is shown full-screen when Imagination Studio starts. Delete the file to go back to the built-in title.

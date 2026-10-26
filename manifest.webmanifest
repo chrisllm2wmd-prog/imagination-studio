@@ -1,0 +1,14 @@
+{
+  "name": "Imagination Studio",
+  "short_name": "Imagination",
+  "description": "Logos, ads and merch in one creative workspace, with animation and Claude.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c0e18",
+  "theme_color": "#0c0e18",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,86 @@
+﻿IMAGINATION STUDIO  -  one editor for logos, ads and merch
+=====================================================
+
+START IT
+  Double-click "Start Imagination Studio.bat" (leave its window open). It opens the app in
+  your browser and lets exports save straight into  MERCH\logos  (ads go to MERCH\ads),
+  never overwriting - a second save gets -2, -3...
+  (Opening index.html directly still works, but SVG text-outlining, saving into your
+  folder and the Claude tab need the .bat.)
+
+THE THREE WORKSPACES (top bar)  - all one canvas, one file
+  Logo  - print / merch artwork in inches.
+  Ad    - ad sizes, theme + copy writer, layouts, "export all sizes" ZIP.
+  Merch - live product mockups (tee, hoodie, tote, mug, poster, cap, sticker).
+  Switching never loses work. File > New has presets for every one of them
+  (incl. 2048/4096 square decals for Gran Turismo-style livery editors).
+
+TOOLS (left)  V Move  H Hand  Z Zoom  R Rect / O Ellipse / L Line / more shapes (hold or
+  right-click the shape button)  P Pen (bezier)  B Pencil  T Text  W Magic wand
+  E Eraser  I Eyedropper  X swap fill/stroke.   Press Ctrl+K to search every command.
+  DRAWING TOOLS LOCK THE CANVAS: while a shape/pen/pencil/text tool is active you can only
+  draw - clicking an existing item never selects it. Press V to go back to Move.
+  (Settings > Canvas > Behaviour lets you turn that off.)
+
+HANDLES / ZOOM
+  Grab points sit right on the object's edge and stay on screen even if you enlarge an
+  object far beyond the view. Zoom slider is always bottom-right of the canvas
+  (Ctrl+wheel or wheel on empty space zooms at the cursor, Space+drag or middle-drag pans,
+  wheel over the SELECTED object resizes it, Shift+wheel rotates it).
+  Rulers: drag from a ruler to pull out a guide; drag it back to remove it.
+
+FONTS  777 bundled, offline, in 18 categories (Stencil & Military, Distressed & Grunge,
+  Graffiti & Street, Blackletter, Script, Handwritten/Brush, Retro/Western, Sci-Fi...).
+  Open the browser from the Font button; search, favourite (star), recent, preview text.
+  Effects > Distress wears any text/shape like a worn print.
+
+COPY LAYER  Select something, then Object > Copy:
+  Mirror (left/right, up/down, diagonals, 4-way), Radial copies, Kaleidoscope with 2-96
+  segments, rotation, clip-to-wedge, choice of pivot, group or flatten. Live preview.
+
+EXPORT  (Ctrl+E)
+  Formats: PNG, JPG, WebP, AVIF (if your browser supports it), SVG (vector, text turned to
+  outlines), PDF (vector), TIFF, BMP, ICO.  You set the file name, pixel size / inches+DPI,
+  quality, background, and an optional "keep the file under X KB/MB" limit - the app lowers
+  quality (then size) until it fits.  The estimated file size updates as you change things.
+  Save > Project (Ctrl+S) keeps every layer editable.
+
+AD WORKSPACE
+  "Ad Studio" tab: pick a size, add theme pieces (website files, pictures, notes), choose
+  campaign / voice / style, hit "Write & build ad". The ad is real objects on the canvas -
+  edit anything afterwards. "Use my current design as the logo picture" pulls your logo in.
+
+CLAUDE TAB  Ask Claude to design, edit, critique or ANIMATE (e.g. "slide it in, pulse, loop"); changes = one undo step. Works with Claude Code on this PC (needs the .bat) or your own Claude API key pasted in the tab (kept only in your browser).
+
+Your previous version is kept in MERCH\_backup_before_unify and MERCH\merch-logo-builder\_old.
+
+GROUPS PANEL (left)
+  Drag a box round, or Shift-click, several things and they appear in the Groups panel,
+  LOCKED by default: the group moves, rotates and scales as one and keeps its layout.
+  Click the padlock to release it (items can then be edited one by one); Alt-click picks one
+  item inside a locked group. Each group has a SAVE icon: it goes into "Saved groups" where
+  you can insert it again any time, download it as a file, or load a group file.
+
+COLOUR FADES (Fill tab)
+  Drag the handle on the direction dial (or press an arrow) to aim the fade - Shift snaps 15 deg.
+  Edge slider: from a clean line (hard-edged bands) to a gradual fade. Every colour has its own
+  transparency, or tick "clear" to fade to see-through.
+
+TEXT LAYOUT (Design tab, with text selected)
+  Curve, Step (stairs), Wave, Bulge / Pinch, Rotate each letter, Spin along, Skew, Slope, plus one-click
+  presets (Arch, Circle, Wave, Stairs, Bulge, Fan, Slant, Tumble...).
+
+NODE TOOL (A)  click a shape or path, drag points and curve handles; click a line to add a point;
+  double-click a point for corner <-> smooth; Delete removes a point.
+TRACE TO VECTOR  select a picture > Picture panel > "Trace to vector..." (Object menu too).
+GIF export added (256 colours, dithering, transparency).
+
+DROP SHADOW (Design tab > Effects) works on any element: colour, opacity, blur, Depth and Angle. With several things selected, Unify casts ONE shadow around the whole group (untick it for a shadow on each item).
+
+
+TITLE PAGE  Put your own artwork in the "title" folder as title-page.png (or .jpg/.webp/.svg/.gif). It shows full-screen at start; click or press Enter to begin.
+
+BACKGROUND TAB: a simple on/off switch. Turn it on, pick Solid / Fade / Pattern / Picture and everything updates instantly (it is exported with your design). Off = transparent. To colour selected shapes with a fade or pattern instead, use Fill & Stroke > Gradient / pattern in the Design tab.
+
+BUILD FOR (Canvas tab): choose Print / Vector / Game decal while designing; it lists anything that will not survive that target, with Select and one-click fixes. The real file format is still chosen at export.
+CREDIT: Created by Chris Chapman - Powered by your Imagination (title page, start screen, Help > About).

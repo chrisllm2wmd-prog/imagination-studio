@@ -1,0 +1,533 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' data: blob: https://api.anthropic.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Imagination Studio</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0c0e18">
+<link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="css/studio.css">
+</head>
+<body data-ws="logo">
+
+<input type="file" id="fileImportInput" accept="image/*,.svg" multiple hidden>
+<input type="file" id="bgImageInput" accept="image/*" hidden>
+<input type="file" id="projectLoadInput" accept="application/json,.json,.msd" hidden>
+
+<div id="app">
+
+  <!-- ===================== MENU BAR ===================== -->
+  <header id="menubar">
+    <div class="brand"><i data-i="logo"></i><span>Imagination Studio</span></div>
+    <nav id="menus"></nav>
+    <div id="wsSwitch" title="Workspace">
+      <button data-ws="logo"><i data-i="logo"></i>Logo</button>
+      <button data-ws="ad"><i data-i="megaphone"></i>Ad</button>
+      <button data-ws="merch"><i data-i="shirt"></i>Merch</button>
+    </div>
+    <div class="spacer"></div>
+    <input class="doc-name" id="docName" value="Untitled design" spellcheck="false" title="Design name (used as the default file name when you save or export)">
+    <button class="ib" id="btnUndo" data-tip="Undo|Ctrl+Z"><i data-i="undo"></i></button>
+    <button class="ib" id="btnRedo" data-tip="Redo|Ctrl+Shift+Z"><i data-i="redo"></i></button>
+    <button class="btn ghost" id="btnPreview" data-tip="Full-screen preview|Space+P"><i data-i="play"></i>Preview</button>
+    <button class="btn ghost" id="btnFull" data-tip="Full screen for editing|F11"><i data-i="fit"></i><span>Full screen</span></button>
+    <button class="btn" id="btnSaveProject" data-tip="Save editable project|Ctrl+S"><i data-i="save"></i>Save</button>
+    <button class="btn" id="btnSaveAs" data-tip="Save as — new name or folder|Ctrl+Shift+S">Save as…</button>
+    <button class="btn primary" id="btnExport" data-tip="Export image / vector|Ctrl+E"><i data-i="export"></i>Export</button>
+  </header>
+
+  <!-- ===================== OPTIONS BAR ===================== -->
+  <div id="optionsbar"></div>
+
+  <div id="main">
+    <!-- ===================== TOOLBOX ===================== -->
+    <nav id="toolbox"></nav>
+
+    <!-- ===================== CANVAS ===================== -->
+    <div id="center">
+      <div id="vpWrap">
+        <div id="rulerCorner" title="Rulers on/off"><i data-i="ruler" style="width:12px;height:12px"></i></div>
+        <canvas id="rulerTop"></canvas>
+        <canvas id="rulerLeft"></canvas>
+        <div id="vp">
+          <div id="artboard" class="checker"><div class="garment"></div></div>
+          <canvas id="mainCanvas"></canvas>
+          <canvas id="overlay"></canvas>
+          <div id="hud"></div>
+          <div id="dropveil">Drop pictures to add them</div>
+          <div id="zoomPill">
+            <button class="ib" id="zFit" data-tip="Fit to screen|Ctrl+0"><i data-i="fit"></i></button>
+            <button class="ib" id="zMinus" data-tip="Zoom out|Ctrl+−"><i data-i="minus"></i></button>
+            <input type="range" id="zoomSlider" min="0" max="1000" value="500" step="1" aria-label="Zoom">
+            <button class="ib" id="zPlus" data-tip="Zoom in|Ctrl++"><i data-i="plus"></i></button>
+            <span class="zval" id="zoomLabel" title="Click for 100%">100%</span>
+          </div>
+        </div>
+      </div>
+      <footer id="statusbar">
+        <span class="grow" id="sbHint">Ready</span>
+        <span class="mono" id="sbCursor">x — y —</span>
+        <span id="sbSel"></span>
+        <span id="sbDoc"></span>
+        <span class="sb-toggle" id="sbSnap" data-tip="Snap to guides, grid and objects"><i data-i="magnet"></i>Snap</span>
+        <span class="sb-toggle" id="sbGrid" data-tip="Show grid"><i data-i="grid"></i>Grid</span>
+      </footer>
+    </div>
+
+    <!-- ===================== DOCK ===================== -->
+    <aside id="dock">
+      <div id="dockResize"></div>
+
+      <div class="dock-group" id="dockTop">
+        <div class="dock-tabs" id="tabsTop">
+          <button class="dock-tab active" data-page="design"><i data-i="gear"></i>Design</button>
+          <button class="dock-tab" data-page="fill"><i data-i="bucket"></i>Background</button>
+          <button class="dock-tab" data-page="canvas"><i data-i="grid"></i>Canvas</button>
+          <button class="dock-tab ws-ad" data-page="ad"><i data-i="megaphone"></i>Ad Studio</button>
+          <button class="dock-tab ws-merch" data-page="merch"><i data-i="shirt"></i>Merch</button>
+          <button class="dock-tab" data-page="claude"><i data-i="sparkle"></i>Claude</button>
+        </div>
+        <div class="dock-pages">
+
+          <!-- ========== DESIGN (properties of selection) ========== -->
+          <div class="dock-page" id="page-design">
+            <div id="propsEmpty" class="empty-note">
+              <i data-i="info"></i>
+              <div><b>Nothing selected</b></div>
+              <div>Pick the <b>Move</b> tool and click something on the canvas — or choose a tool on the left and draw.</div>
+              <div style="margin-top:10px" class="hint">Tip: press <kbd>Ctrl</kbd>+<kbd>K</kbd> to search every command.</div>
+            </div>
+            <div id="propsBody" class="hidden">
+
+              <div class="sect" data-sect="transform">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Transform<span class="sp"></span></div>
+                <div class="sect-b">
+                  <div class="r two"><div class="f"><span data-scrub="propX">X</span><input type="number" id="propX"><em>px</em></div><div class="f"><span data-scrub="propY">Y</span><input type="number" id="propY"><em>px</em></div></div>
+                  <div class="r two"><div class="f"><span data-scrub="propW">W</span><input type="number" id="propW" min="1"><em>px</em></div><div class="f"><span data-scrub="propH">H</span><input type="number" id="propH" min="1"><em>px</em></div></div>
+                  <div class="r">
+                    <button class="tb" id="propLockBtn" data-tip="Lock aspect ratio"><i data-i="unlink"></i></button>
+                    <input type="checkbox" id="propLockRatio" class="hidden">
+                    <div class="f grow"><span data-scrub="propAngleNum">∠</span><input type="number" id="propAngleNum" step="1"><em>°</em></div>
+                    <button class="tb" id="btnFlipH" data-tip="Flip horizontal"><i data-i="fliph"></i></button>
+                    <button class="tb" id="btnFlipV" data-tip="Flip vertical"><i data-i="flipv"></i></button>
+                    <button class="tb" id="btnRot90" data-tip="Rotate 90°"><i data-i="rot90"></i></button>
+                  </div>
+                  <input type="range" id="propAngle" class="hidden" min="0" max="360">
+                  <div class="r" id="alignRow">
+                    <div class="tb-row fill">
+                      <button class="tb" data-align="left" data-tip="Align left"><i data-i="al-l"></i></button>
+                      <button class="tb" data-align="hcenter" data-tip="Align horizontal centres"><i data-i="al-hc"></i></button>
+                      <button class="tb" data-align="right" data-tip="Align right"><i data-i="al-r"></i></button>
+                      <button class="tb" data-align="top" data-tip="Align top"><i data-i="al-t"></i></button>
+                      <button class="tb" data-align="vcenter" data-tip="Align vertical centres"><i data-i="al-vc"></i></button>
+                      <button class="tb" data-align="bottom" data-tip="Align bottom"><i data-i="al-b"></i></button>
+                      <button class="tb" data-align="distH" data-tip="Distribute horizontally (3+)"><i data-i="dist-h"></i></button>
+                      <button class="tb" data-align="distV" data-tip="Distribute vertically (3+)"><i data-i="dist-v"></i></button>
+                    </div>
+                  </div>
+                  <div class="hint" style="margin-top:-2px">One object aligns to the artboard; several align to each other.</div>
+                </div>
+              </div>
+
+              <div class="sect" data-sect="appearance">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Appearance</div>
+                <div class="sect-b">
+                  <div class="r"><label>Opacity</label><input type="range" id="propOpacity" min="0" max="100" value="100"><div class="f" style="width:62px"><input type="number" id="propOpacityNum" min="0" max="100" value="100"><em>%</em></div></div>
+                  <span id="propOpacityLabel" class="hidden"></span>
+                  <div class="r"><label>Blend</label>
+                    <select id="propBlend" class="grow">
+                      <option value="source-over">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option>
+                      <option value="darken">Darken</option><option value="lighten">Lighten</option><option value="color-dodge">Color dodge</option><option value="color-burn">Color burn</option>
+                      <option value="hard-light">Hard light</option><option value="soft-light">Soft light</option><option value="difference">Difference</option><option value="exclusion">Exclusion</option>
+                      <option value="hue">Hue</option><option value="saturation">Saturation</option><option value="color">Color</option><option value="luminosity">Luminosity</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sect" id="propFillGroup" data-sect="fillstroke">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Fill &amp; Stroke</div>
+                <div class="sect-b">
+                  <div class="r"><label>Fill</label>
+                    <span class="swatch-in"><input type="color" id="propFill"></span>
+                    <span id="propFillPreview" class="chip" style="display:none;cursor:default"></span>
+                    <label class="chk mut"><input type="checkbox" id="propFillNone"> None</label>
+                    <span class="grow"></span>
+                    <button class="btn sm" id="btnMoreFills" data-tip="Gradients and 22 patterns">Gradient / pattern…</button>
+                  </div>
+                  <div class="r"><label>Stroke</label>
+                    <span class="swatch-in"><input type="color" id="propStroke"></span>
+                    <span id="propStrokePreview" class="chip" style="display:none;cursor:default"></span>
+                    <label class="chk mut"><input type="checkbox" id="propStrokeNone" checked> None</label>
+                    <span class="grow"></span>
+                    <div class="f" style="width:72px"><span data-scrub="propStrokeWidth">W</span><input type="number" id="propStrokeWidth" min="0" step="0.5" value="2"></div>
+                  </div>
+                  <div class="r"><label>Style</label>
+                    <div class="seg grow" id="strokeStyleSeg"><button data-v="solid" class="active">Solid</button><button data-v="dash">Dashed</button><button data-v="dot">Dotted</button></div>
+                  </div>
+                  <div class="r" id="rowCorner"><label>Corners</label><input type="range" id="propRadius" min="0" max="500" value="0"><div class="f" style="width:62px"><input type="number" id="propRadiusNum" min="0" value="0"><em>px</em></div></div>
+                  <div class="r"><label>Line join</label>
+                    <div class="seg grow" id="strokeJoinSeg"><button data-v="miter" class="active">Sharp</button><button data-v="round">Round</button><button data-v="bevel">Bevel</button></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sect" id="propShapeWarp" data-sect="shapewarp" style="display:none">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Warp shape</div>
+                <div class="sect-b">
+                  <div class="chips" id="swPresets"></div>
+                  <div class="r"><label>Arch</label><input type="range" id="swArch" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Side bend</label><input type="range" id="swSide" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Wave</label><input type="range" id="swWave" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Wave count</label><input type="range" id="swWaveN" min="0.5" max="6" step="0.5" value="1.5"></div>
+                  <div class="r"><label>Bulge</label><input type="range" id="swBulge" min="-80" max="150" value="0"></div>
+                  <div class="r"><label>Taper</label><input type="range" id="swTaper" min="-90" max="90" value="0"></div>
+                  <div class="r"><label>Twist</label><input type="range" id="swTwist" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Skew</label><input type="range" id="swSkewX" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Slope</label><input type="range" id="swSkewY" min="-100" max="100" value="0"></div>
+                  <div class="r"><button class="btn sm" id="swReset">Reset warp</button><span class="hint">Works on squares, circles, triangles, polygons and stars.</span></div>
+                </div>
+              </div>
+
+              <div class="sect" id="propTextGroup" data-sect="text">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Text</div>
+                <div class="sect-b">
+                  <div class="r textstyle"><label>Text colour</label><span class="swatch-in big"><input type="color" id="propTextColor" value="#222222"></span><span class="chip" id="propTextColorFade" style="display:none;cursor:default">Fade</span><span class="grow"></span><button class="btn sm" id="propTextShadowBtn" data-tip="Turn a drop shadow on / off"><i data-i="drop"></i>Effects…</button></div>
+                  <textarea id="propTextContent" rows="3" spellcheck="true" lang="en" placeholder="Type your text…" style="font-size:14px"></textarea>
+                  <button type="button" class="font-btn" id="propFontFamilyBtn"><span class="fp">Montserrat</span><i data-i="chevd"></i></button>
+                  <div class="r two">
+                    <div class="f"><span data-scrub="propFontSize">Size</span><input type="number" id="propFontSize" min="4" step="1"></div>
+                  </div>
+                  <div class="r two">
+                    <div class="tb-row fill">
+                      <button class="tb" id="propBold" data-tip="Bold"><b>B</b></button>
+                      <button class="tb" id="propItalic" data-tip="Italic"><i style="font-style:italic;font-family:serif">I</i></button>
+                      <button class="tb" id="propUnderline" data-tip="Underline"><u>U</u></button>
+                      <button class="tb" id="propStrike" data-tip="Strikethrough"><s>S</s></button>
+                    </div>
+                  </div>
+                  <div class="r two">
+                    <div class="tb-row fill">
+                      <button class="tb" id="propAlignLeft" data-tip="Align left"><i data-i="word"></i></button>
+                      <button class="tb" id="propAlignCenter" data-tip="Align centre"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M6 12h12M4.5 18h15"/></svg></button>
+                      <button class="tb" id="propAlignRight" data-tip="Align right"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M9 12h12M6 18h15"/></svg></button>
+                      <button class="tb" id="propAlignJustify" data-tip="Justify"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+                    </div>
+                    <div class="tb-row fill">
+                      <button class="tb" id="caseUpper" data-tip="UPPERCASE">AA</button>
+                      <button class="tb" id="caseLower" data-tip="lowercase">aa</button>
+                      <button class="tb" id="caseTitle" data-tip="Title Case">Aa</button>
+                    </div>
+                  </div>
+                  <div class="r"><label>Line spacing</label><input type="range" id="propLineHeightR" min="0.3" max="3" step="0.01" value="1.16"><div class="f" style="width:62px"><input type="number" id="propLineHeight" min="0.1" max="10" step="0.05" value="1.16"></div></div>
+                  <div class="r"><label>Letter spacing</label><input type="range" id="propCharSpacingR" min="-200" max="1500" step="10" value="0"><div class="f" style="width:62px"><input type="number" id="propCharSpacing" min="-500" max="5000" step="10" value="0"></div></div>
+                  <div class="r"><label>Curve</label><input type="range" id="propCurve" min="-100" max="100" value="0"><div class="f" style="width:62px"><input type="number" id="propCurveNum" min="-100" max="100" value="0"></div></div>
+                  <div class="hr"></div>
+                  <div class="hint" style="font-weight:700;letter-spacing:.4px;text-transform:uppercase">Text layout</div>
+                  <div class="chips" id="tlPresets"></div>
+                  <div class="r"><label>Step</label><input type="range" id="tlStep" min="-60" max="60" value="0"></div>
+                  <div class="r"><label>Wave</label><input type="range" id="tlWave" min="0" max="80" value="0"></div>
+                  <div class="r"><label>Wave count</label><input type="range" id="tlWaveN" min="0.5" max="6" step="0.5" value="1.5"></div>
+                  <div class="r"><label>Bulge</label><input type="range" id="tlBulge" min="-80" max="150" value="0"></div>
+                  <div class="r"><label>Rotate each</label><input type="range" id="tlTilt" min="-45" max="45" value="0"></div>
+                  <div class="r"><label>Spin along</label><input type="range" id="tlSpin" min="-30" max="30" value="0"></div>
+                  <div class="r"><label>Skew</label><input type="range" id="tlSkewX" min="-60" max="60" value="0"></div>
+                  <div class="r"><label>Slope</label><input type="range" id="tlSkewY" min="-45" max="45" value="0"></div>
+                  <div class="r"><button class="btn sm" id="tlReset">Reset layout</button><span class="hint">Curve is the slider above. Each letter becomes its own piece (still editable as one text).</span></div>
+                  <div class="tb-row fill">
+                    <button class="btn sm" id="btnGraffitiStyle" data-tip="One click: graffiti font + thick outline + shadow. Click again to cycle 20 looks.">🎨 Graffiti style</button>
+                    <button class="btn sm" id="btnTextOutline" data-tip="Convert this text to editable vector shapes (letters become paths)">Convert to outlines</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sect" id="propImageGroup" data-sect="image">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Picture</div>
+                <div class="sect-b">
+                  <div class="r"><label class="chk"><input type="checkbox" id="propTintEnable"> Recolor (tint)</label><span class="grow"></span><span class="swatch-in"><input type="color" id="propTintColor" value="#ff0000"></span><label class="chk mut"><input type="checkbox" id="propTintClear"> Clear</label></div>
+                  <div class="r"><label>Amount</label><input type="range" id="propTintAmount" min="0" max="100" value="70"></div>
+                  <div class="r"><label class="chk"><input type="checkbox" id="propGrayscale"> Grayscale</label><label class="chk"><input type="checkbox" id="propInvert"> Invert</label><label class="chk"><input type="checkbox" id="propSepia"> Sepia</label></div>
+                  <div class="r"><label>Bright</label><input type="range" id="fxBright" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Contrast</label><input type="range" id="fxContrast" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Saturate</label><input type="range" id="fxSat" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Hue</label><input type="range" id="fxHue" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Blur</label><input type="range" id="fxBlur" min="0" max="100" value="0"></div>
+                  <div class="r"><label>Pixelate</label><input type="range" id="fxPixel" min="1" max="40" value="1"></div>
+                  <div class="r"><label>Noise</label><input type="range" id="fxNoise" min="0" max="400" value="0"></div>
+                  <div class="tb-row fill">
+                    <button class="btn sm" id="btnImgWand"><i data-i="wand"></i>Remove background</button>
+                    <button class="btn sm" id="btnImgEraser"><i data-i="eraser"></i>Erase</button>
+                    <button class="btn sm" id="btnImgReset">Reset</button>
+                    <button class="btn sm" id="btnImgTrace" data-tip="Turn this picture into editable vector shapes"><i data-i="pen"></i>Trace to vector…</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sect" data-sect="effects">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Effects</div>
+                <div class="sect-b">
+                  <div id="fxStack"></div>
+                  <div class="hr"></div>
+                  <div class="r"><label>Distress</label>
+                    <select id="fxDistressKind" class="grow"><option value="">Off</option><option value="grunge">Grunge wear</option><option value="scratch">Scratches</option><option value="spray">Spray speckle</option><option value="halftone">Halftone fade</option><option value="crack">Cracked paint</option><option value="stamp">Rubber stamp</option><option value="fade">Edge fade</option></select>
+                  </div>
+                  <div id="fxDistressBox" style="display:none;flex-direction:column;gap:7px;padding-left:4px">
+                    <div class="r"><label>Amount</label><input type="range" id="fxDistressAmt" min="1" max="100" value="45"></div>
+                    <div class="r"><label>Grain size</label><input type="range" id="fxDistressSize" min="1" max="100" value="40"></div>
+                    <div class="r"><label>Seed</label><input type="range" id="fxDistressSeed" min="1" max="999" value="7"><button class="tb" id="fxDistressDice" data-tip="Randomise"><i data-i="rotate"></i></button></div>
+                    <div class="hint">Wears holes into the artwork like a worn print. Raster effect — SVG export bakes it in as a picture.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sect" data-sect="arrange">
+                <div class="sect-h"><i data-i="chevd" class="car"></i>Arrange &amp; copy</div>
+                <div class="sect-b">
+                  <div class="tb-row fill">
+                    <button class="tb" id="btnBringFront" data-tip="Bring to front|Ctrl+]"><i data-i="front"></i></button>
+                    <button class="tb" id="btnBringFwd" data-tip="Forward|]"><i data-i="fwd"></i></button>
+                    <button class="tb" id="btnSendBwd" data-tip="Backward|["><i data-i="bwd"></i></button>
+                    <button class="tb" id="btnSendBack" data-tip="Send to back|Ctrl+["><i data-i="back"></i></button>
+                    <button class="tb" id="btnGroup" data-tip="Group|Ctrl+G"><i data-i="group"></i></button>
+                    <button class="tb" id="btnUngroup" data-tip="Ungroup|Ctrl+Shift+G"><i data-i="ungroup"></i></button>
+                  </div>
+                  <div class="tb-row fill">
+                    <button class="btn sm" id="btnDuplicate"><i data-i="dup"></i>Duplicate</button>
+                    <button class="btn sm" id="btnMirrorCopy"><i data-i="mirror"></i>Mirror copy…</button>
+                    <button class="btn sm" id="btnKaleido"><i data-i="kaleido"></i>Kaleidoscope…</button>
+                  </div>
+                  <div class="tb-row fill"><button class="btn sm danger" id="btnDelete"><i data-i="trash"></i>Delete</button></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ========== FILL & BACKGROUND ========== -->
+          <div class="dock-page hidden" id="page-fill">
+            <div class="sect" id="bgTopSect"><div class="sect-b" style="padding-top:12px">
+              <div class="r"><label class="switch"><input type="checkbox" id="bgOn"><span class="sw-ui"></span></label><b style="flex:1;font-size:13px">Background</b><span class="hint" id="bgOnNote">Off — transparent</span></div>
+              <div id="bgModes" style="display:none"><div class="seg acc"><button data-m="solid">Solid</button><button data-m="fade">Fade</button><button data-m="pattern">Pattern</button><button data-m="scene">Scenes</button><button data-m="picture">Picture</button></div></div>
+              <div class="hint">Everything below changes the background instantly. It is part of your exported file (the garment colour in the Canvas tab is preview only).</div>
+            </div></div>
+            <div class="sect" id="bgSelBanner" style="display:none"><div class="sect-b" style="padding-top:12px">
+              <b>Colouring the selected objects</b>
+              <select id="bgTarget" class="hidden"><option value="bg">bg</option><option value="sel">sel</option></select>
+              <label class="chk mut"><input type="checkbox" id="bgSpan" checked> Fade runs across the whole selection as one blend</label>
+              <div class="hint" id="bgTargetNote"></div>
+              <button class="btn sm" id="bgBackToBg">← Back to the background</button>
+            </div></div>
+            <div class="sect" data-mode="solid">
+              <div class="sect-h">Solid colour</div>
+              <div class="sect-b">
+                <div class="r"><span class="swatch-in"><input type="color" id="bgSolidColor" value="#1b3a4b"></span><label class="chk mut"><input type="checkbox" id="bgSolidClear"> Clear</label><span class="grow"></span><button class="btn sm primary applybtn" id="btnApplySolidBg">Apply solid</button></div>
+              </div>
+            </div>
+            <div class="sect" data-mode="fade">
+              <div class="sect-h">Colour fade (gradient)</div>
+              <div class="sect-b">
+                <div class="r"><label># Colours</label><select id="bgGradStops" class="grow"><option value="2">2 (fade)</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select></div>
+                <div class="fade-wrap">
+                  <div id="fadeDial" data-tip="Drag the handle to aim the fade|Shift = 15° steps"></div>
+                  <div class="fade-side">
+                    <div class="f"><span>∠</span><input type="number" id="bgGradAngleNum" min="0" max="360" value="45"><em>°</em></div>
+                    <div class="dirpad" id="fadeDirs"></div>
+                    <button class="btn sm" id="fadeReverse">⇄ Reverse</button>
+                  </div>
+                </div>
+                <div id="bgGradStopsList" style="display:flex;flex-direction:column;gap:5px"></div>
+                <div class="r"><label>Edge</label><input type="range" id="bgGradSoft" min="0" max="100" value="100"></div>
+                <div class="r" style="justify-content:space-between;margin-top:-4px"><span class="hint">◀ clean line</span><span class="hint" id="bgGradSoftLbl">gradual fade ▶</span></div>
+                <div id="bgGradPreview" class="checkbar"><i></i></div>
+                <div class="hint">Each colour has its own transparency — set 0% (or tick Clear) to fade to see-through.</div>
+                <button class="btn sm primary applybtn" id="btnApplyGradientBg">Apply fade</button>
+              </div>
+            </div>
+            <div class="sect" data-mode="pattern">
+              <div class="sect-h">Patterns <span class="sp"></span><span class="muted" id="bgPatCount" style="text-transform:none;letter-spacing:0;font-weight:400"></span></div>
+              <div class="sect-b">
+                <div class="r"><label>Colour A</label><span class="swatch-in"><input type="color" id="bgPatColorA" value="#0d1b2a"></span><label class="chk mut"><input type="checkbox" id="bgPatClearA"> Clear</label><span class="grow"></span><label>B</label><span class="swatch-in"><input type="color" id="bgPatColorB" value="#ffffff"></span><label class="chk mut"><input type="checkbox" id="bgPatClearB"> Clear</label></div>
+                <label class="chk mut"><input type="checkbox" id="bgPatFade"> Paint the pattern with the colour fade above</label>
+                <div class="patgrid" id="bgPatternGrid"></div>
+              </div>
+            </div>
+            <div class="sect" data-mode="scene">
+              <div class="sect-h">Scenes <span class="sp"></span><span class="muted" id="bgSceneCount" style="text-transform:none;letter-spacing:0;font-weight:400"></span></div>
+              <div class="sect-b">
+                <div class="r"><label>Base</label><span class="swatch-in"><input type="color" id="bgScA" value="#0a1030"></span><label>Accent</label><span class="swatch-in"><input type="color" id="bgScB" value="#9ec5ff"></span><label>Glow</label><span class="swatch-in"><input type="color" id="bgScC" value="#ffd9a0"></span></div>
+                <div class="r"><label>Amount</label><input type="range" id="bgScDens" min="1" max="100" value="50"></div>
+                <div class="r"><label>Size</label><input type="range" id="bgScSize" min="1" max="100" value="50"></div>
+                <div class="r"><label>Variation</label><input type="range" id="bgScSeed" min="1" max="999" value="7"><button class="tb" id="bgScDice" data-tip="Shuffle"><i data-i="rotate"></i></button></div>
+                <div class="scenegrid" id="bgSceneGrid"></div>
+                <div class="hint">Pick a scene, then change the three colours, amount and size. Use Colour grade below to set the mood.</div>
+              </div>
+            </div>
+            <div class="sect" data-mode="scene pattern">
+              <div class="sect-h">Colour grade</div>
+              <div class="sect-b">
+                <div class="chips" id="bgGradePresets"></div>
+                <div class="r"><label>Hue</label><input type="range" id="bgGrHue" min="-180" max="180" value="0"></div>
+                <div class="r"><label>Saturation</label><input type="range" id="bgGrSat" min="-100" max="100" value="0"></div>
+                <div class="r"><label>Brightness</label><input type="range" id="bgGrBri" min="-100" max="100" value="0"></div>
+                <div class="r"><label>Contrast</label><input type="range" id="bgGrCon" min="-100" max="100" value="0"></div>
+                <div class="r"><label>Warm / cool</label><input type="range" id="bgGrWarm" min="-100" max="100" value="0"></div>
+                <div class="r"><label>Glow</label><input type="range" id="bgGrGlow" min="0" max="100" value="0"></div>
+                <div class="r"><label>Vignette</label><input type="range" id="bgGrVig" min="0" max="100" value="0"></div>
+                <div class="r"><label>Grain</label><input type="range" id="bgGrGrain" min="0" max="100" value="0"></div>
+                <div class="r"><button class="btn sm" id="bgGrReset">Reset grade</button><span class="hint">Applies to Scenes and Patterns.</span></div>
+              </div>
+            </div>
+            <div class="sect" data-mode="picture">
+              <div class="sect-h">Picture background</div>
+              <div class="sect-b">
+                <div class="tb-row fill"><button class="btn sm" id="btnUploadBg"><i data-i="image"></i>Use a picture</button><button class="btn sm danger" id="btnRemoveBg"><i data-i="trash"></i>Remove background</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== CANVAS / DOCUMENT ========== -->
+          <div class="dock-page hidden" id="page-canvas">
+            <div class="sect">
+              <div class="sect-h">Document</div>
+              <div class="sect-b">
+                <div class="r two"><div class="f"><span>W</span><input type="number" id="docW" min="1" step="any"><em class="docUnit">in</em></div><div class="f"><span>H</span><input type="number" id="docH" min="1" step="any"><em class="docUnit">in</em></div></div>
+                <div class="r"><label>Units</label><div class="seg grow" id="unitSeg"><button data-u="in" class="active">in</button><button data-u="cm">cm</button><button data-u="mm">mm</button><button data-u="px">px</button></div></div>
+                <div class="r"><button class="btn sm" id="docApplySize">Apply size</button><button class="btn sm" id="docSwap"><i data-i="swap"></i>Swap</button><span class="hint grow" id="canvasSizeLabel"></span></div>
+                <div class="hint">Resizing keeps your artwork where it is. Use <b>File ▸ New</b> for presets.</div>
+              </div>
+            </div>
+            <div class="sect">
+              <div class="sect-h">Garment preview colour</div>
+              <div class="sect-b">
+                <div class="r"><span class="swatch-in"><input type="color" id="garmentColorPicker" value="#ffffff"></span><label class="chk mut"><input type="checkbox" id="garmentClear"> Clear (transparent)</label></div>
+                <div class="swgrid" id="garmentSwatches"></div>
+                <div class="hint">Preview only — never baked into a transparent export.</div>
+              </div>
+            </div>
+            <div class="sect">
+              <div class="sect-h">Guides &amp; snapping</div>
+              <div class="sect-b">
+                <label class="chk"><input type="checkbox" id="toggleChecker" checked> Show transparency checkerboard</label>
+                <label class="chk"><input type="checkbox" id="toggleGuides" checked> Show centre guides</label>
+                <label class="chk"><input type="checkbox" id="toggleSnap"> Snap to grid &amp; guides</label>
+                <label class="chk"><input type="checkbox" id="toggleSmart" checked> Smart guides (snap to other objects)</label>
+                <label class="chk"><input type="checkbox" id="toggleRulers" checked> Rulers</label>
+                <label class="chk"><input type="checkbox" id="toggleSafe"> Safe area &amp; bleed overlay</label>
+                <div class="r"><label>Grid</label><div class="f grow"><input type="number" id="gridSize" min="2" value="50" style="padding-left:8px"><em>px</em></div><label class="chk"><input type="checkbox" id="toggleGrid"> Show</label></div>
+                <div class="r"><label>Safe margin</label><div class="f grow"><input type="number" id="safeMargin" min="0" value="0.5" step="0.125" style="padding-left:8px"><em>in</em></div></div>
+                <div class="r"><button class="btn sm" id="btnClearGuides">Clear ruler guides</button></div>
+                <div class="hint">Drag from a ruler to pull out a guide. Double-click a guide to remove it.</div>
+              </div>
+            </div>
+            <div class="sect">
+              <div class="sect-h">Behaviour</div>
+              <div class="sect-b">
+                <label class="chk"><input type="checkbox" id="prefWheelResize" checked> Mouse wheel over the selected object resizes it</label>
+                <label class="chk"><input type="checkbox" id="prefStickyTools"> Drawing tools stay active until I pick another</label>
+                <label class="chk"><input type="checkbox" id="prefClampHandles" checked> Keep handles on screen for huge objects</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== AD STUDIO / MERCH (filled by modules) ========== -->
+          <div class="dock-page hidden" id="page-ad"></div>
+          <div class="dock-page hidden" id="page-merch"></div>
+
+          <!-- ========== CLAUDE ========== -->
+          <div class="dock-page hidden" id="page-claude">
+            <div class="sect"><div class="sect-b" style="padding-top:10px">
+              <div id="claudeStatus" class="hint"></div>
+              <details id="claudeKeyBox" class="hint" style="margin:4px 0 8px"><summary style="cursor:pointer">Use my own Claude API key instead</summary>
+                <div class="tb-row fill" style="margin-top:6px"><input type="password" id="claudeKey" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" style="flex:1;min-width:0"><button class="btn sm" id="claudeKeySave">Save</button><button class="btn sm" id="claudeKeyForget">Forget</button></div>
+                <div class="hint" style="margin-top:4px">Get a key at console.anthropic.com (billed by Anthropic per use, separate from a Claude subscription). It is stored only in this browser and sent only to api.anthropic.com.</div>
+              </details>
+              <div class="tb-row fill">
+                <button class="btn sm claude-quick" data-q="critique">Critique</button>
+                <button class="btn sm claude-quick" data-q="ideas">Ideas</button>
+                <button class="btn sm claude-quick" data-q="palette">Palettes</button>
+              </div>
+              <div id="claudeLog"></div>
+              <textarea id="claudeInput" rows="3" placeholder="Ask Claude to design, edit or advise…  e.g. “make the text gold and curve it”, “add a star badge behind it”, “put it on a black hoodie”"></textarea>
+              <div class="tb-row fill"><button class="btn primary" id="claudeSend" style="flex:2">Send ⏎</button><button class="btn" id="claudeClear">Clear chat</button></div>
+              <label class="chk mut"><input type="checkbox" id="claudeSeeDesign" checked> Let Claude see a snapshot of my design</label>
+              <div class="hint">Claude runs through the Claude Code on this PC (your own login) or your own API key. Only the chat, a list of your layers and the snapshot are sent. Changes are one step in Undo.</div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="splitter" id="dockSplit"></div>
+
+      <div class="dock-group" id="dockBottom">
+        <div class="dock-tabs" id="tabsBottom">
+          <button class="dock-tab active" data-page="layers"><i data-i="layers"></i>Layers</button>
+          <button class="dock-tab" data-page="history"><i data-i="history"></i>History</button>
+          <button class="dock-tab" data-page="swatches"><i data-i="palette"></i>Swatches</button>
+          <button class="ib dock-collapse" id="dockCollapse" data-tip="Collapse / expand the Layers area"><i data-i="chevd"></i></button>
+        </div>
+        <div class="dock-pages">
+          <div class="dock-page" id="page-layers" style="padding:0;display:flex;flex-direction:column;overflow:hidden">
+            <div id="layersList" style="flex:1;overflow-y:auto"></div>
+            <div class="layers-foot">
+              <button class="tb" id="lyAddText" data-tip="Add text"><i data-i="text"></i></button>
+              <button class="tb" id="lyDup" data-tip="Duplicate"><i data-i="dup"></i></button>
+              <button class="tb" id="lyGroup" data-tip="Group"><i data-i="group"></i></button>
+              <button class="tb" id="lyMerge" data-tip="Flatten selection into one picture"><i data-i="merge"></i></button>
+              <span style="flex:1"></span>
+              <button class="tb" id="lyDel" data-tip="Delete"><i data-i="trash"></i></button>
+            </div>
+          </div>
+          <div class="dock-page hidden" id="page-history" style="padding:0"><div id="historyList"></div></div>
+          <div class="dock-page hidden" id="page-swatches">
+            <div class="sect"><div class="sect-h">Document colours</div><div class="sect-b"><div class="swgrid" id="docSwatches"></div></div></div>
+            <div class="sect"><div class="sect-h">Recent</div><div class="sect-b"><div class="swgrid" id="recentSwatches"></div></div></div>
+            <div class="sect"><div class="sect-h">Merch-safe palette</div><div class="sect-b"><div class="swgrid" id="stockSwatches"></div></div></div>
+            <div class="sect"><div class="sect-b hint">Click a swatch to fill the selection. <kbd>Shift</kbd>-click sets the stroke instead.</div></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="js/lib/fabric.min.js"></script>
+<script src="js/lib/opentype.min.js"></script>
+<script src="js/lib/jszip.min.js"></script>
+<script src="js/lib/jspdf.umd.min.js"></script>
+<script src="js/lib/svg2pdf.umd.min.js"></script>
+<script src="fonts/manifest.js"></script>
+<script src="js/version.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/patterns.js"></script>
+<script src="js/patterns2.js"></script>
+<script src="js/core.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/scenes.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/shapewarp.js"></script>
+<script src="js/nodes.js"></script>
+<script src="js/trace.js"></script>
+<script src="js/fonts.js"></script>
+<script src="js/symmetry.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/export.js"></script>
+<script src="js/merch.js"></script>
+<script src="js/ads.js"></script>
+<script src="js/files.js"></script>
+<script src="js/groups.js"></script>
+<script src="js/compat.js"></script>
+<script src="js/claude.js"></script>
+<script src="js/anim.js"></script>
+<script src="js/help.js"></script>
+<script src="js/pwa.js"></script>
+<script src="js/boot.js"></script>
+</body>
+</html>
+

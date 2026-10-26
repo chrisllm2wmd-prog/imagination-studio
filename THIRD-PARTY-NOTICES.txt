@@ -1,0 +1,26 @@
+THIRD-PARTY NOTICES - Imagination Studio
+
+Imagination Studio bundles the following open-source software. Each keeps its own licence
+and copyright; the full licence text is in the header of the file in js/lib/ where the
+library supplies one.
+
+JavaScript libraries (js/lib/)
+  Fabric.js 5.1.0        MIT licence   (c) Printio / Fabric.js authors
+  opentype.js            MIT licence   (c) Frederik De Bleser and contributors
+  JSZip 3.10.1           MIT or GPLv3  (c) Stuart Knightley and contributors
+  jsPDF 2.5.1            MIT licence   (c) James Hall and contributors
+  svg2pdf.js             MIT licence   (c) yWorks GmbH, Vitaly Puzrin and contributors
+
+Fonts (fonts/)
+  The bundled fonts come from the Google Fonts collection and are licensed under the SIL Open
+  Font Licence 1.1 or the Apache Licence 2.0 (per font). They may be used in personal and
+  commercial work, including logos and merchandise, and bundled with software, but must not be
+  sold on their own. Each font remains (c) its respective designers. See
+  https://fonts.google.com/ for each font's designer and licence.
+
+MIT licence (summary of the standard text)
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files, to deal in the software without restriction, including
+  without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies, subject to including the copyright notice and this permission notice.
+  The software is provided "as is", without warranty of any kind.

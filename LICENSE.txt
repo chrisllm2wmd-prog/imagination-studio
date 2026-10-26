@@ -1,0 +1,21 @@
+IMAGINATION STUDIO - licence
+
+Copyright (c) Chris Chapman. All rights reserved.
+
+You may use Imagination Studio for your own personal and commercial design work, and
+anything you create with it (logos, ads, merch art, animations, exports) belongs to you.
+
+You may NOT sell, re-sell, re-distribute or re-host Imagination Studio itself (or a modified
+copy of it) without written permission from the author.
+
+The software is provided "as is", without warranty of any kind. The author is not liable for
+any loss or damage arising from its use.
+
+Third-party libraries and fonts bundled with the app keep their own licences - see
+THIRD-PARTY-NOTICES.txt.
+
+PRIVACY
+Everything runs in your browser. Your designs are not uploaded anywhere. The only outside
+connection the app can make is the optional Claude tab, and only if you add your own Claude
+API key (it goes straight to api.anthropic.com from your browser, and is stored only in your
+browser - it is never part of the app, your saved projects or your exports).
