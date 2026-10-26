@@ -342,8 +342,8 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 #splash.out{opacity:0;pointer-events:none;}
 #splash .sp-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;}
 #splash .sp-default{text-align:center;} #splash .sp-mark .ic{width:84px;height:84px;color:var(--acc);} #splash h1{font-size:46px;margin:14px 0 6px;letter-spacing:1px;font-weight:700;} #splash p{color:var(--mut);font-size:15px;margin:0;}
-#splash .sp-go{position:absolute;bottom:9vh;height:42px;padding:0 34px;font-size:15px;border-radius:22px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
-#splash .sp-hint{position:absolute;bottom:4.5vh;color:rgba(255,255,255,.55);font-size:12px;text-shadow:0 1px 4px #000;}
+#splash .sp-go{position:absolute;bottom:13vh;height:42px;padding:0 34px;font-size:15px;border-radius:22px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+#splash .sp-hint{position:absolute;bottom:4.6vh;color:rgba(255,255,255,.55);font-size:12px;text-shadow:0 1px 4px #000;}
 
 /* font browser lives over the right-hand dock until closed */
 #fontBrowser.docked{border-radius:0;border-width:0 0 0 1px;box-shadow:-10px 0 30px rgba(0,0,0,.45);z-index:250;}
@@ -536,3 +536,32 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 @media (max-width:1180px){ .doc-name{width:78px;} #btnSaveProject,#btnSaveAs,#btnExport{padding:0 8px;} #btnSaveProject i,#btnExport i{margin-right:3px;} }
 @media (max-width:1060px){ #btnSaveAs{display:none;} }
 #anPill{left:auto;right:14px;bottom:14px;width:34px;height:34px;display:grid;place-items:center;background:var(--bg2);border:1px solid var(--accln);border-radius:50%;} #anPill .ic{transform:rotate(180deg);width:16px;height:16px;} #anClose .ic{width:16px;height:16px;} #animBar .an-top{padding-right:8px;}
+
+/* install buttons (title screen + editor top bar) */
+#splash .sp-bottom{position:absolute;left:0;right:0;bottom:1.8vh;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;}
+#splash .sp-bottom>*{pointer-events:auto;}
+#splash .sp-bottom .sp-go,#splash .sp-bottom .sp-hint,#splash .sp-bottom .sp-credit{position:static;bottom:auto;left:auto;right:auto;}
+#splash .sp-install{display:flex;flex-direction:column;align-items:center;gap:1px;background:rgba(34,197,94,.14);border:1px solid #22c55e;color:#eafff1;border-radius:22px;padding:6px 26px;font-size:14px;font-weight:700;cursor:pointer;text-shadow:0 1px 4px #000;transition:background .15s,transform .15s;}
+#splash .sp-install .ic{width:15px;height:15px;vertical-align:-3px;margin-right:6px;display:inline-block;}
+#splash .sp-install small{font-size:11px;font-weight:500;color:rgba(255,255,255,.75);}
+#splash .sp-install:hover{background:rgba(34,197,94,.3);transform:translateY(-1px);}
+#btnInstall{background:linear-gradient(135deg,#22c55e,#15a34a);border:0;color:#fff;font-weight:700;margin-left:10px;padding:0 14px;box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:installPulse 2.6s ease-out infinite;}
+#btnInstall:hover{filter:brightness(1.1);animation:none;}
+@keyframes installPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.65);}70%{box-shadow:0 0 0 9px rgba(34,197,94,0);}100%{box-shadow:0 0 0 0 rgba(34,197,94,0);}}
+@media (prefers-reduced-motion:reduce){#btnInstall{animation:none;}}
+
+/* mission statement (Help centre first topic) */
+.hc-mission{font-size:15px;font-weight:700;line-height:1.45;color:var(--txt);border-left:3px solid var(--acc);padding:4px 0 4px 12px;margin:2px 0 14px;}
+.hc-p{font-size:13.5px;line-height:1.65;margin:0 0 11px;color:var(--txt);}
+.hc-h3{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);margin:18px 0 6px;}
+.hc-stand{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px;}
+.hc-stand li{font-size:13px;line-height:1.5;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--bg0);}
+.hc-stand li b{color:var(--acc);}
+.hc-sign{margin-top:16px;font-size:12px;color:var(--dim);letter-spacing:.5px;}
+/* title-screen install: a quiet link under Start creating so it never competes with the main button */
+#splash .sp-bottom{gap:14px;}
+#splash .sp-install{background:none !important;border:0 !important;box-shadow:none !important;padding:4px 10px;border-radius:8px;flex-direction:row;gap:8px;align-items:center;font-size:13px;font-weight:600;color:rgba(255,255,255,.86);text-shadow:0 1px 6px #000,0 0 14px rgba(0,0,0,.7);}
+#splash .sp-install small{font-size:12px;font-weight:400;color:rgba(255,255,255,.6);}
+#splash .sp-install small::before{content:'\00b7';margin-right:8px;}
+#splash .sp-install:hover{background:rgba(255,255,255,.1) !important;transform:none;color:#fff;}
+#splash .sp-install:hover span{text-decoration:underline;}

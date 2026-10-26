@@ -18,6 +18,23 @@ const needAnim = ()=>{ if(MS.anim){ if(!MS.anim.state.on) MS.anim.toggle(true); 
 
 /* ---------- the topics ---------- */
 const TOPICS = [
+  { id:'why', group:'Start here', title:'Why Imagination Studio exists', sum:'Our mission: one honest place to design your own merch — no tab-hopping, no sketchy downloads, no spam.',
+    story:{
+      paras:[
+        'I set out to create my own line of merch. It should have been simple. It wasn\u2019t.',
+        'Every editor I tried was different from the last, and each one was missing something I needed — a key feature here, a basic tool there — or boxed me in with restrictions. To finish a single design I was bouncing between several browser tools, hunting down downloads I didn\u2019t trust, and carrying files back and forth between them. It slowed my workflow right down and stressed me out. And every free trial I signed up for, just to get one thing done, left my mailbox full of spam.',
+        'Imagination Studio was born out of that frustration.',
+      ],
+      standsFor:[
+        ['Everything in one place.', 'Logos, ads, merch mock-ups, animation and every export format, in one editor with one set of tools.'],
+        ['No restrictions.', 'The tools you actually need, not a stripped-down version that nudges you to upgrade.'],
+        ['No sign-ups, no spam.', 'No accounts and no free trials to start, so nothing lands in your inbox.'],
+        ['Nothing sketchy to download.', 'Use it in your browser, or install it as an app straight from the page.'],
+        ['Private by design.', 'It runs on your computer. Your designs are not uploaded anywhere.'],
+        ['Always getting better.', 'Installed copies update themselves, with new tools and improvements added regularly.'],
+      ],
+      sign:'Created by Chris Chapman \u00b7 Powered by your Imagination' },
+    bullets:[], steps:[] },
   { id:'start', group:'Start here', title:'Getting around', sum:'The screen in one minute: menus, tools, canvas, panels, save and export.', bullets:['Pick a size on the start screen, or Blank canvas for a huge square.', 'Tools on the left, settings for the tool along the top, panels on the right.', 'Everything stays editable — Ctrl+Z undoes anything.'],
     steps:[
       { sel:'#menubar', title:'Menus', text:'File, Edit, Object, Type, Effects, View, Window and Help. Almost every command lives here — and Ctrl+K searches all of them.', before:noAnim },
@@ -25,7 +42,7 @@ const TOPICS = [
       { sel:'#toolbox', title:'The tools', text:'Select / move, node edit, hand, zoom, shapes, pen, pencil, text, pictures, magic wand, eraser and eyedropper. Drawing tools lock the canvas — you go back to Select automatically after drawing.', place:'right' },
       { sel:'#optionsbar', title:'Tool settings', text:'This bar changes with the tool: colours and corner radius for shapes, fonts for text, and buttons for the selected object (align, flip, Shadow / Glow / Outline).' },
       { sel:'#zoomPill', title:'Zoom', text:'Fit, zoom in/out, or drag the slider. Ctrl + mouse wheel zooms at the cursor; hold Space and drag to pan.', place:'top' },
-      { sel:'#dock', title:'The panels', text:'Design (size, colour, text, effects), Background, Canvas, and Claude. Below: Layers, History and Swatches.', place:'left', before:page('design') },
+      { sel:'#dock', title:'The panels', text:'Design (size, colour, text, effects), Background, Canvas, and Claude (design and animate by prompt). Below: Layers, History and Swatches.', place:'left', before:page('design') },
       { sel:'#btnSaveProject', title:'Save', text:'Saves an editable project file you can reopen later. With the .bat running it goes straight into MERCH\\logos.' },
       { sel:'#btnExport', title:'Export', text:'PNG, JPG, SVG, PDF and more — with exact size, DPI and file-size limit. Animated GIFs are under Animate.' },
     ] },
@@ -103,7 +120,7 @@ const TOPICS = [
     steps:[
       { sel:'#optionsbar', title:'Symmetry buttons', text:'With something selected the bar shows Mirror copy and Kaleidoscope. They are also under Object ▸ Copy.', before:()=>{ tool('move')(); sampleAny(); } },
     ] },
-  { id:'animate', group:'Animate', title:'Animation and GIFs', sum:'Make elements move, loop them cleanly and export an animated GIF.', bullets:['Click an effect to animate the selected element instantly.', 'Keyframes: move the element at different times and it records.', 'Make seamless loop, then Export GIF.'],
+  { id:'animate', group:'Animate', title:'Animation and GIFs', sum:'Make elements move, loop them cleanly and export an animated GIF.', bullets:['Click an effect to animate the selected element instantly.', 'Keyframes: move the element at different times and it records.', 'Morph melts text from another font (or a warped shape) into its own.', 'Preview plays it full screen; Make seamless loop, then Export GIF.', 'Or just ask Claude: it can build and edit animations from a sentence.'],
     steps:[
       { sel:'#sbAnim', title:'Open the timeline', text:'Click Animate (or Ctrl+Shift+A). A timeline opens under the canvas.', place:'top', before:noAnim },
       { sel:'#animBar', title:'The timeline', text:'One row per animated element. Diamonds are keyframes; coloured bars are motion effects. The red line is the playhead — drag the ruler to scrub.', place:'top', before:()=>{ sampleAny(); needAnim(); } },
@@ -112,6 +129,8 @@ const TOPICS = [
       { sel:'#anSnapBtn', title:'Add keyframe', text:'The camera button on the edge of the drawing area (or a click of the mouse wheel on the canvas) adds a keyframe at the playhead: it records the selected element exactly as it is now. Move the playhead, move the element, click it again — that is a keyframe animation.', place:'left', before:()=>{ needAnim(); } },
       { sel:'#anOnEl', title:'Settings for each effect', text:'Every effect on the selected element has its own card: Amount, Cycles, direction, start and length. Change anything and it plays back at once. Add several effects to stack them. Stagger (above) offsets several selected elements.', place:'left', before:()=>{ sampleAny(); needAnim(); } },
       { sel:'#anAuto', title:'Keyframes', text:'With Auto-key on, move / scale / rotate an element at any time on the timeline and a keyframe is recorded. "◆ Add key" records one at the playhead; drag diamonds to retime; easing sets the feel.', place:'bottom', before:()=>{ needAnim(); } },
+      { sel:'#btnPreview', title:'Preview', text:'Plays the animation live, full screen, so you can judge it before exporting. Press Esc to come back.', place:'bottom', before:()=>{ needAnim(); } },
+      { sel:'#dock .dock-tab[data-page="claude"]', title:'Let Claude do it', text:'In the Claude tab describe the motion in plain words — "bounce in, then wiggle forever" — and Claude adds the effects and keyframes. You can still tweak everything on the timeline afterwards.', place:'left', before:page('claude') },
       { sel:'#anLoopFix', title:'Seamless loop', text:'Makes the last frame identical to the first and rounds loop effects to whole cycles, so the GIF repeats with no jump. The badge turns green when it is perfect.', place:'bottom', before:()=>{ needAnim(); } },
       { sel:'#anGif', title:'Export GIF', text:'Choose width, speed, colours, background and how many times it plays — you get a size estimate first. "Frames" saves every frame as a PNG in a ZIP.', place:'bottom', before:()=>{ needAnim(); } },
     ] },
@@ -126,9 +145,17 @@ const TOPICS = [
       { sel:'#sbSnap', title:'Snap and grid', text:'Snap pulls things to guides, the grid and other objects; Grid shows the grid. Drag from a ruler to pull out a guide.', place:'top' },
       { sel:'#menus', title:'Everything else', text:'Help ▸ Keyboard shortcuts lists them all.' },
     ] },
-  { id:'claude', group:'Share', title:'The Claude tab', sum:'Describe what you want and Claude lays it out.', bullets:['Needs the .bat running and Claude Code installed.', 'Claude can add text and shapes, recolour, align and set backgrounds.'],
+  { id:'claude', group:'Share', title:'The Claude tab', sum:'Describe what you want and Claude designs it, edits it or animates it.', bullets:['Connect your own Claude: either Claude Code on this PC (start with the .bat) or paste your own Claude API key (kept only in your browser, sent only to Anthropic).', 'Claude can add text and shapes, recolour, align, set backgrounds and mock-ups.', 'Claude can ANIMATE: ask for "slide in, pulse, then loop" and it adds effects, keyframes, length and a seamless loop for you.', 'Every change is one step in Undo, so Ctrl+Z always gets you back.'],
     steps:[
-      { sel:'#dock .dock-tab[data-page="claude"]', title:'Claude', text:'Describe your design in plain words and Claude builds it on the canvas. Uses the Claude login you already have — no keys to paste. Works when you start the app with the .bat.', place:'left', before:page('claude') },
+      { sel:'#dock .dock-tab[data-page="claude"]', title:'Claude', text:'Describe your design in plain words and Claude builds it on the canvas. It uses your own Claude: Claude Code on this PC, or your own API key.', place:'left', before:page('claude') },
+      { sel:'#claudeStatus', title:'Connection', text:'Shows how you are connected. Claude Code is picked up automatically when you start with the .bat; otherwise open "Use my own Claude API key" below it.', place:'left', before:page('claude') },
+      { sel:'#claudeKeyBox', title:'Your own API key', text:'Paste a key from console.anthropic.com and press Save. It stays in this browser only and is sent only to Anthropic. Forget removes it. Usage is billed by Anthropic, separate from a Claude subscription.', place:'left', before:page('claude') },
+      { sel:'#claudeInput', title:'Ask for animation', text:'Try "make the text fly in, pulse gently, then fade out as a seamless loop". The timeline opens and plays it. Ask for changes ("slower", "add a glow pulse") and Claude edits the same animation.', place:'left', before:page('claude') },
+    ] },
+  { id:'install', group:'Share', title:'Install the app and updates', sum:'Install Imagination Studio like a normal program: it works offline and updates itself.', bullets:['On the web version, click the green Install app button in the top bar (or on the title screen).', 'Installed, it opens in its own window with a Start menu and taskbar icon, and works offline with all 777 fonts.', 'New versions download quietly. When one is ready a bar says "Update now" — nothing changes while you are designing until you click it.', 'Your saved projects and your Claude key are not touched by updates.', 'Chrome and Edge install in one click. Safari: File ▸ Add to Dock. iPhone / iPad: Share ▸ Add to Home Screen. Firefox cannot install web apps on desktop.'],
+    steps:[
+      { sel:'#btnInstall', fallback:'#wsSwitch', title:'Install app', text:'The green button in the top bar installs Imagination Studio as an app. It disappears once installed (and is not shown on the offline .bat version, which does not need it).', place:'bottom' },
+      { sel:'#statusbar', title:'Version', text:'The version number sits at the bottom right. Installed copies pick up new versions automatically and ask before switching.', place:'top' },
     ] },
 ];
 
@@ -177,8 +204,12 @@ function openHelp(select){
   body.innerHTML = `<div class="hc-side"><input type="search" id="hcFind" placeholder="Search help…"><div id="hcList"></div></div><div class="hc-main" id="hcMain"></div>`;
   const api = MS.modal({ title:'Help centre', body, wide:true, footer:false });
   const list = $('#hcList', body), main = $('#hcMain', body), find = $('#hcFind', body);
-  function drawList(){ const q = find.value.toLowerCase().trim(); list.innerHTML = groups.map(g=>{ const its = g.items.filter(t=> !q || (t.title + ' ' + t.sum + ' ' + t.bullets.join(' ') + ' ' + t.steps.map(s=> s.title + ' ' + s.text).join(' ')).toLowerCase().includes(q)); return its.length ? `<div class="hc-g">${esc(g.n)}</div>` + its.map(t=> `<button class="${t === cur ? 'on' : ''}" data-id="${t.id}">${esc(t.title)}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:10px">Nothing matches.</div>'; $$('button', list).forEach(b=> b.onclick = ()=>{ cur = TOPICS.find(t=> t.id === b.dataset.id); drawList(); drawMain(); }); }
-  function drawMain(){ main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><ul>${cur.bullets.map(b=> `<li>${esc(b)}</li>`).join('')}</ul>
+  function drawList(){ const q = find.value.toLowerCase().trim(); list.innerHTML = groups.map(g=>{ const its = g.items.filter(t=> !q || (t.title + ' ' + t.sum + ' ' + t.bullets.join(' ') + ' ' + t.steps.map(s=> s.title + ' ' + s.text).join(' ') + ' ' + (t.story ? t.story.paras.join(' ') + ' ' + t.story.standsFor.map(x=> x.join(' ')).join(' ') : '')).toLowerCase().includes(q)); return its.length ? `<div class="hc-g">${esc(g.n)}</div>` + its.map(t=> `<button class="${t === cur ? 'on' : ''}" data-id="${t.id}">${esc(t.title)}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:10px">Nothing matches.</div>'; $$('button', list).forEach(b=> b.onclick = ()=>{ cur = TOPICS.find(t=> t.id === b.dataset.id); drawList(); drawMain(); }); }
+  function drawStory(){
+    const st = cur.story;
+    main.innerHTML = `<h2>${esc(cur.title)}</h2><div class="hc-mission">${esc(cur.sum)}</div>${st.paras.map(p=> `<p class="hc-p">${esc(p)}</p>`).join('')}<h3 class="hc-h3">What Imagination Studio stands for</h3><ul class="hc-stand">${st.standsFor.map(x=> `<li><b>${esc(x[0])}</b> ${esc(x[1])}</li>`).join('')}</ul><div class="hc-sign">${esc(st.sign)}</div>`;
+  }
+  function drawMain(){ if(cur.story) return drawStory(); main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><ul>${cur.bullets.map(b=> `<li>${esc(b)}</li>`).join('')}</ul>
     <button class="btn primary" id="hcTour">${MS.icon('play')}Show me — guided tour (${cur.steps.length} steps)</button>
     <div class="hc-steps">${cur.steps.map((s, i)=> `<div class="hc-step" data-i="${i}"><b>${i + 1}</b><div><strong>${esc(s.title)}</strong><span>${esc(s.text)}</span></div></div>`).join('')}</div><div class="hint">Click any step to jump straight to it on screen.</div>`;
     $('#hcTour', main).onclick = ()=> startTour(cur.id); $$('.hc-step', main).forEach(el=> el.onclick = ()=> startTour(cur.id, +el.dataset.i)); }
@@ -189,7 +220,8 @@ MS.help = { open:openHelp, tour:startTour, end:endTour, topics:TOPICS };
 MS.initHelp = function(){
   document.addEventListener('keydown', e=>{ if(e.key === 'F1'){ e.preventDefault(); openHelp(); } });
   MS.addCommand && MS.addCommand({ title:'Help centre', cat:'Help', run:()=> openHelp() });
-  TOPICS.forEach(t=> MS.addCommand && MS.addCommand({ title:'Guided tour: ' + t.title, cat:'Help', run:()=> startTour(t.id) }));
+  MS.addCommand && MS.addCommand({ title:'Why Imagination Studio exists (our mission)', cat:'Help', run:()=> openHelp('why') });
+  TOPICS.filter(t=> t.steps.length).forEach(t=> MS.addCommand && MS.addCommand({ title:'Guided tour: ' + t.title, cat:'Help', run:()=> startTour(t.id) }));
   if(!MS.store.get('helpHinted', false)){ setTimeout(()=>{ MS.store.set('helpHinted', true); toast('New here? Help ▸ Help centre (or F1) has a guided tour for every feature.', 7000); }, 9000); }
 };
 })();

@@ -321,7 +321,8 @@ MS.showShortcuts = function(){
   MS.modal({ title:'Keyboard shortcuts', med:true, footer:false, body:'<div class="kbd-grid">' + rows.map(([c, l])=>`<div class="cat">${c}</div>` + l.map(([k, v])=>`<div><span>${v}</span><kbd>${k}</kbd></div>`).join('')).join('') + '</div>' });
 };
 MS.showAbout = function(){
-  MS.modal({ title:'About', footer:false, body:'<div style="text-align:center;padding:10px 0 4px"><div style="color:var(--acc)">' + MS.icon('logo').replace('class="ic"', 'class="ic" style="width:64px;height:64px"') + '</div><h2 style="margin:10px 0 2px;font-size:22px">Imagination Studio</h2><div class="hint" style="font-size:13px">Logos · Ads · Merch — one creative workspace</div><div style="margin-top:18px;font-size:13px">Created by <b>Chris Chapman</b></div><div class="hint" style="font-size:13px">Powered by your Imagination</div></div>' });
+  const ab = MS.modal({ title:'About', footer:false, body:'<div style="text-align:center;padding:10px 0 4px"><div style="color:var(--acc)">' + MS.icon('logo').replace('class="ic"', 'class="ic" style="width:64px;height:64px"') + '</div><h2 style="margin:10px 0 2px;font-size:22px">Imagination Studio</h2><div class="hint" style="font-size:13px">Logos · Ads · Merch — one creative workspace</div><div style="margin:14px auto 0;max-width:340px;font-size:13px;line-height:1.55">Built because making your own merch shouldn’t mean ten browser tabs, sketchy downloads and a spam-filled inbox. One honest place to design it all.</div><div style="margin-top:10px"><button class="btn sm" id="aboutStory">Read the full story</button></div><div style="margin-top:18px;font-size:13px">Created by <b>Chris Chapman</b></div><div class="hint" style="font-size:13px">Powered by your Imagination</div><div class="hint" style="margin-top:14px">Version ' + (window.IMAGINATION_VERSION || '') + '</div></div>' });
+  const sb = ab.el.querySelector('#aboutStory'); if(sb) sb.onclick = ()=>{ ab.close(); MS.help && MS.help.open('why'); };
 };
 MS.showTips = function(){
   MS.modal({ title:'Good to know', med:true, footer:false, body:`<div class="hint" style="font-size:12.5px;line-height:1.7">
@@ -412,8 +413,8 @@ async function showSplash(){
   return new Promise(res=>{
     const ov = document.createElement('div'); ov.id = 'splash';
     ov.innerHTML = (art ? '<img class="sp-art" src="' + art + '" alt="Imagination Studio">' : '<div class="sp-default"><div class="sp-mark">' + MS.icon('logo') + '</div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div>') +
-      '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><button class="btn primary sp-go" id="spGo">Start creating</button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div>';
-    document.body.appendChild(ov);
+      '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><div class="sp-bottom"><button class="btn primary sp-go" id="spGo">Start creating</button><button class="sp-install" id="spInstall" style="display:none"><span>' + MS.icon('download') + 'Install Imagination Studio</span><small>Free · works offline · updates itself</small></button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div></div>';
+    document.body.appendChild(ov); MS.pwaSync && MS.pwaSync();
     const go = ()=>{ document.removeEventListener('keydown', key, true); ov.classList.add('out'); setTimeout(()=> ov.remove(), 400); res(); };
     const key = e=>{ if(e.key === 'Enter' || e.key === ' ' || e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); go(); } };
     document.addEventListener('keydown', key, true); ov.addEventListener('click', go);
@@ -449,6 +450,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   MS.setGarment('#ffffff', true);
   await showSplash();
   MS.openNewDialog(true);
+  setTimeout(()=>{ MS.pwa && MS.pwa.maybePrompt(); }, 1400);   // suggests installing (web version only, not if already installed)
 });
 })();
 

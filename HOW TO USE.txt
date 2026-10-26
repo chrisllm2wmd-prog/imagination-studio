@@ -1,3 +1,6 @@
+WHY IMAGINATION STUDIO EXISTS  (also: Help centre, first topic)
+  I set out to make my own line of merch and found every editor different, missing key tools or locked behind restrictions. I ended up juggling browser tools, sketchy downloads and free trials that filled my mailbox with spam. That slowed me down and stressed me out. Imagination Studio was born from that: one honest place to design it all - no tab-hopping, no sketchy downloads, no spam.  - Chris Chapman
+
 ﻿IMAGINATION STUDIO  -  one editor for logos, ads and merch
 =====================================================
 
@@ -84,3 +87,5 @@ BACKGROUND TAB: a simple on/off switch. Turn it on, pick Solid / Fade / Pattern 
 
 BUILD FOR (Canvas tab): choose Print / Vector / Game decal while designing; it lists anything that will not survive that target, with Select and one-click fixes. The real file format is still chosen at export.
 CREDIT: Created by Chris Chapman - Powered by your Imagination (title page, start screen, Help > About).
+
+INSTALL & UPDATES (web version)  Click the green "Install app" button (top bar, or under Start creating on the title screen). Chrome / Edge install in one click; Safari: File > Add to Dock; iPhone / iPad: Share > Add to Home Screen. Installed, it opens in its own window, works offline (all fonts included) and updates itself: when a new version is ready a bar says "Update now". Saved projects and your Claude key are never touched by updates.
