@@ -1,10 +1,8 @@
 /* Imagination Studio service worker: offline use + safe updates.
    VERSION is stamped by make-download.ps1, so every new build gets its own cache and the browser sees a changed sw.js. */
-const VERSION = '3.95 beta';
+const VERSION = '3.97 beta';
 const CACHE = 'imagination-' + VERSION;
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'fonts/manifest.js', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png',
-  'js/lib/fabric.min.js', 'js/lib/opentype.min.js', 'js/lib/jszip.min.js', 'js/lib/jspdf.umd.min.js', 'js/lib/svg2pdf.umd.min.js',
-  'js/version.js', 'js/icons.js', 'js/ui.js', 'js/patterns.js', 'js/patterns2.js', 'js/core.js', 'js/tools.js', 'js/scenes.js', 'js/panels.js', 'js/shapewarp.js', 'js/nodes.js', 'js/trace.js', 'js/fonts.js', 'js/symmetry.js', 'js/effects.js', 'js/export.js', 'js/merch.js', 'js/ads.js', 'js/files.js', 'js/groups.js', 'js/compat.js', 'js/claude.js', 'js/anim.js', 'js/help.js', 'js/pwa.js', 'js/boot.js'];
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png', 'app.js?v=3.97-beta'];
 
 self.addEventListener('install', e=>{
   // fetch fresh copies (bypass the browser HTTP cache) and keep them; the new worker WAITS until the user accepts the update
@@ -22,7 +20,7 @@ async function cacheFonts(){
   const c = await caches.open(CACHE), css = await (await fetch('fonts/fonts.css')).text();
   const urls = [...new Set([...css.matchAll(/url\(\s*['"]?([^'")]+\.woff2?)['"]?\s*\)/g)].map(m=> new URL(m[1], new URL('fonts/fonts.css', self.registration.scope)).href))];
   const todo = []; for(const u of urls){ if(!(await c.match(u))) todo.push(u); }
-  for(let i = 0; i < todo.length; i += 6) await Promise.all(todo.slice(i, i + 6).map(u=> fetch(u).then(r=>{ if(r.ok) return c.put(u, r); }).catch(()=>{})));
+  for(let i = 0; i < todo.length; i += 4) await Promise.all(todo.slice(i, i + 4).map(u=> fetch(u).then(r=>{ if(r.ok) return c.put(u, r); }).catch(()=>{})));
 }
 self.addEventListener('fetch', e=>{
   const req = e.request, url = new URL(req.url);
