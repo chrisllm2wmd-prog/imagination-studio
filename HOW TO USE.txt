@@ -89,3 +89,5 @@ BUILD FOR (Canvas tab): choose Print / Vector / Game decal while designing; it l
 CREDIT: Created by Chris Chapman - Powered by your Imagination (title page, start screen, Help > About).
 
 INSTALL & UPDATES (web version)  Click the green "Install app" button (top bar, or under Start creating on the title screen). Chrome / Edge install in one click; Safari: File > Add to Dock; iPhone / iPad: Share > Add to Home Screen. Installed, it opens in its own window, works offline (all fonts included) and updates itself: when a new version is ready a bar says "Update now". Saved projects and your Claude key are never touched by updates.
+
+CONTACT & MORE  Created by Chris Chapman. Email chris.llm2wmd@gmail.com | Other products: www.llm2wmd.com | Merch store: www.llm2wmd.com/#shop  (also in Help centre > Contact & more, and Help > About).

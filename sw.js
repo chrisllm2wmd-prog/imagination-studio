@@ -1,6 +1,6 @@
 /* Imagination Studio service worker: offline use + safe updates.
    VERSION is stamped by make-download.ps1, so every new build gets its own cache and the browser sees a changed sw.js. */
-const VERSION = '3.92 beta';
+const VERSION = '3.94 beta';
 const CACHE = 'imagination-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'fonts/manifest.js', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png',
   'js/lib/fabric.min.js', 'js/lib/opentype.min.js', 'js/lib/jszip.min.js', 'js/lib/jspdf.umd.min.js', 'js/lib/svg2pdf.umd.min.js',

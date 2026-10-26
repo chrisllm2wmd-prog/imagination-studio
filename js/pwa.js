@@ -44,12 +44,11 @@ function maybePrompt(){
   MS.pwa._shown = true;
   const li = (b, t)=> '<li style="margin:9px 0"><b>' + b + '</b> ' + t + '</li>';
   MS.modal({ title:'Get Imagination Studio as an app', med:true, sticky:true,
-    body:'<div style="font-size:14px;line-height:1.55">Install it once and it lives on your computer like any other program:</div>' +
+    body:'<div style="font-size:14px;line-height:1.55">Install it once and it lives on your computer:</div>' +
       '<ul style="margin:10px 0 4px;padding-left:20px;font-size:13.5px;line-height:1.5">' +
       li('Always up to date.', 'New features and fixes arrive automatically. When one is ready you just click <i>Update now</i>.') +
       li('Improving all the time.', 'New tools, effects and animation features are added regularly, and installing is how you keep getting them.') +
       li('Works offline.', 'Every tool and all 777 fonts, no internet needed.') +
-      li('Feels like a real app.', 'Its own window, Start menu and taskbar icon. Your designs stay on your computer.') +
       '</ul>',
     buttons:[
       { label:'Don’t ask again', action:()=>{ store.set('pwaNever', true); } },

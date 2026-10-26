@@ -541,10 +541,6 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 #splash .sp-bottom{position:absolute;left:0;right:0;bottom:1.8vh;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;}
 #splash .sp-bottom>*{pointer-events:auto;}
 #splash .sp-bottom .sp-go,#splash .sp-bottom .sp-hint,#splash .sp-bottom .sp-credit{position:static;bottom:auto;left:auto;right:auto;}
-#splash .sp-install{display:flex;flex-direction:column;align-items:center;gap:1px;background:rgba(34,197,94,.14);border:1px solid #22c55e;color:#eafff1;border-radius:22px;padding:6px 26px;font-size:14px;font-weight:700;cursor:pointer;text-shadow:0 1px 4px #000;transition:background .15s,transform .15s;}
-#splash .sp-install .ic{width:15px;height:15px;vertical-align:-3px;margin-right:6px;display:inline-block;}
-#splash .sp-install small{font-size:11px;font-weight:500;color:rgba(255,255,255,.75);}
-#splash .sp-install:hover{background:rgba(34,197,94,.3);transform:translateY(-1px);}
 #btnInstall{background:linear-gradient(135deg,#22c55e,#15a34a);border:0;color:#fff;font-weight:700;margin-left:10px;padding:0 14px;box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:installPulse 2.6s ease-out infinite;}
 #btnInstall:hover{filter:brightness(1.1);animation:none;}
 @keyframes installPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.65);}70%{box-shadow:0 0 0 9px rgba(34,197,94,0);}100%{box-shadow:0 0 0 0 rgba(34,197,94,0);}}
@@ -558,10 +554,16 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .hc-stand li{font-size:13px;line-height:1.5;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--bg0);}
 .hc-stand li b{color:var(--acc);}
 .hc-sign{margin-top:16px;font-size:12px;color:var(--dim);letter-spacing:.5px;}
-/* title-screen install: a quiet link under Start creating so it never competes with the main button */
 #splash .sp-bottom{gap:14px;}
-#splash .sp-install{background:none !important;border:0 !important;box-shadow:none !important;padding:4px 10px;border-radius:8px;flex-direction:row;gap:8px;align-items:center;font-size:13px;font-weight:600;color:rgba(255,255,255,.86);text-shadow:0 1px 6px #000,0 0 14px rgba(0,0,0,.7);}
-#splash .sp-install small{font-size:12px;font-weight:400;color:rgba(255,255,255,.6);}
-#splash .sp-install small::before{content:'\00b7';margin-right:8px;}
-#splash .sp-install:hover{background:rgba(255,255,255,.1) !important;transform:none;color:#fff;}
-#splash .sp-install:hover span{text-decoration:underline;}
+
+/* title-screen install button: green, same size and shape as Start creating */
+#splash .sp-install{display:inline-flex;align-items:center;justify-content:center;height:42px;padding:0 34px;font-size:15px;font-weight:600;border-radius:22px;border:0;cursor:pointer;color:#fff;background:linear-gradient(135deg,#22c55e,#15a34a);box-shadow:0 8px 30px rgba(0,0,0,.5);transition:filter .15s,transform .15s;}
+#splash .sp-install .ic{width:16px;height:16px;margin-right:8px;display:inline-block;vertical-align:-3px;}
+#splash .sp-install:hover{filter:brightness(1.1);transform:translateY(-1px);}
+
+/* contact links (Help centre + About) */
+.hc-links{display:flex;flex-direction:column;gap:9px;margin-top:6px;}
+.hc-link{display:flex;flex-direction:column;gap:2px;padding:11px 13px;border:1px solid var(--line2);border-radius:9px;background:var(--bg0);text-decoration:none;color:var(--txt);transition:border-color .15s,background .15s;}
+.hc-link:hover{border-color:var(--acc);background:var(--bg2,var(--bg0));}
+.hc-link b{font-size:13.5px;} .hc-link span{font-size:12.5px;color:var(--mut);} .hc-link em{font-style:normal;font-size:13px;color:var(--acc);margin-top:2px;}
+.about-links{margin-top:12px;font-size:12.5px;} .about-links a{color:var(--acc);text-decoration:none;} .about-links a:hover{text-decoration:underline;}

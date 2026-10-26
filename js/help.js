@@ -35,6 +35,14 @@ const TOPICS = [
       ],
       sign:'Created by Chris Chapman \u00b7 Powered by your Imagination' },
     bullets:[], steps:[] },
+  { id:'contact', group:'Start here', title:'Contact & more from the creator', sum:'Questions, ideas or a bug to report? Get in touch, or see what else I make.',
+    links:[
+      { title:'Contact me', text:'Feedback, feature ideas, bug reports, or just say hi. Click to open your email app.', show:'chris.llm2wmd@gmail.com', href:'mailto:chris.llm2wmd@gmail.com', mail:true },
+      { title:'Other products', text:'More from the same creator.', show:'www.llm2wmd.com', href:'https://www.llm2wmd.com' },
+      { title:'Merch store', text:'Browse and buy the merch.', show:'www.llm2wmd.com/#shop', href:'https://www.llm2wmd.com/#shop' },
+    ],
+    sign:'Created by Chris Chapman \u00b7 Powered by your Imagination',
+    bullets:[], steps:[] },
   { id:'start', group:'Start here', title:'Getting around', sum:'The screen in one minute: menus, tools, canvas, panels, save and export.', bullets:['Pick a size on the start screen, or Blank canvas for a huge square.', 'Tools on the left, settings for the tool along the top, panels on the right.', 'Everything stays editable — Ctrl+Z undoes anything.'],
     steps:[
       { sel:'#menubar', title:'Menus', text:'File, Edit, Object, Type, Effects, View, Window and Help. Almost every command lives here — and Ctrl+K searches all of them.', before:noAnim },
@@ -204,12 +212,16 @@ function openHelp(select){
   body.innerHTML = `<div class="hc-side"><input type="search" id="hcFind" placeholder="Search help…"><div id="hcList"></div></div><div class="hc-main" id="hcMain"></div>`;
   const api = MS.modal({ title:'Help centre', body, wide:true, footer:false });
   const list = $('#hcList', body), main = $('#hcMain', body), find = $('#hcFind', body);
-  function drawList(){ const q = find.value.toLowerCase().trim(); list.innerHTML = groups.map(g=>{ const its = g.items.filter(t=> !q || (t.title + ' ' + t.sum + ' ' + t.bullets.join(' ') + ' ' + t.steps.map(s=> s.title + ' ' + s.text).join(' ') + ' ' + (t.story ? t.story.paras.join(' ') + ' ' + t.story.standsFor.map(x=> x.join(' ')).join(' ') : '')).toLowerCase().includes(q)); return its.length ? `<div class="hc-g">${esc(g.n)}</div>` + its.map(t=> `<button class="${t === cur ? 'on' : ''}" data-id="${t.id}">${esc(t.title)}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:10px">Nothing matches.</div>'; $$('button', list).forEach(b=> b.onclick = ()=>{ cur = TOPICS.find(t=> t.id === b.dataset.id); drawList(); drawMain(); }); }
+  function drawList(){ const q = find.value.toLowerCase().trim(); list.innerHTML = groups.map(g=>{ const its = g.items.filter(t=> !q || (t.title + ' ' + t.sum + ' ' + t.bullets.join(' ') + ' ' + t.steps.map(s=> s.title + ' ' + s.text).join(' ') + ' ' + (t.links ? t.links.map(l=> l.title + ' ' + l.text + ' ' + l.show).join(' ') : '') + ' ' + (t.story ? t.story.paras.join(' ') + ' ' + t.story.standsFor.map(x=> x.join(' ')).join(' ') : '')).toLowerCase().includes(q)); return its.length ? `<div class="hc-g">${esc(g.n)}</div>` + its.map(t=> `<button class="${t === cur ? 'on' : ''}" data-id="${t.id}">${esc(t.title)}</button>`).join('') : ''; }).join('') || '<div class="hint" style="padding:10px">Nothing matches.</div>'; $$('button', list).forEach(b=> b.onclick = ()=>{ cur = TOPICS.find(t=> t.id === b.dataset.id); drawList(); drawMain(); }); }
   function drawStory(){
     const st = cur.story;
     main.innerHTML = `<h2>${esc(cur.title)}</h2><div class="hc-mission">${esc(cur.sum)}</div>${st.paras.map(p=> `<p class="hc-p">${esc(p)}</p>`).join('')}<h3 class="hc-h3">What Imagination Studio stands for</h3><ul class="hc-stand">${st.standsFor.map(x=> `<li><b>${esc(x[0])}</b> ${esc(x[1])}</li>`).join('')}</ul><div class="hc-sign">${esc(st.sign)}</div>`;
   }
-  function drawMain(){ if(cur.story) return drawStory(); main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><ul>${cur.bullets.map(b=> `<li>${esc(b)}</li>`).join('')}</ul>
+  function drawLinks(){
+    const mailHref = l=> l.mail ? l.href + '?subject=' + encodeURIComponent('Imagination Studio feedback (v' + (window.IMAGINATION_VERSION || '') + ')') : l.href;
+    main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><div class="hc-links">${cur.links.map(l=> `<a class="hc-link" href="${esc(mailHref(l))}"${l.mail ? '' : ' target="_blank" rel="noopener noreferrer"'}><b>${esc(l.title)}</b><span>${esc(l.text)}</span><em>${esc(l.show)}</em></a>`).join('')}</div><div class="hc-sign">${esc(cur.sign)}</div>`;
+  }
+  function drawMain(){ if(cur.story) return drawStory(); if(cur.links) return drawLinks(); main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><ul>${cur.bullets.map(b=> `<li>${esc(b)}</li>`).join('')}</ul>
     <button class="btn primary" id="hcTour">${MS.icon('play')}Show me — guided tour (${cur.steps.length} steps)</button>
     <div class="hc-steps">${cur.steps.map((s, i)=> `<div class="hc-step" data-i="${i}"><b>${i + 1}</b><div><strong>${esc(s.title)}</strong><span>${esc(s.text)}</span></div></div>`).join('')}</div><div class="hint">Click any step to jump straight to it on screen.</div>`;
     $('#hcTour', main).onclick = ()=> startTour(cur.id); $$('.hc-step', main).forEach(el=> el.onclick = ()=> startTour(cur.id, +el.dataset.i)); }
@@ -220,6 +232,7 @@ MS.help = { open:openHelp, tour:startTour, end:endTour, topics:TOPICS };
 MS.initHelp = function(){
   document.addEventListener('keydown', e=>{ if(e.key === 'F1'){ e.preventDefault(); openHelp(); } });
   MS.addCommand && MS.addCommand({ title:'Help centre', cat:'Help', run:()=> openHelp() });
+  MS.addCommand && MS.addCommand({ title:'Contact the creator', cat:'Help', run:()=> openHelp('contact') });
   MS.addCommand && MS.addCommand({ title:'Why Imagination Studio exists (our mission)', cat:'Help', run:()=> openHelp('why') });
   TOPICS.filter(t=> t.steps.length).forEach(t=> MS.addCommand && MS.addCommand({ title:'Guided tour: ' + t.title, cat:'Help', run:()=> startTour(t.id) }));
   if(!MS.store.get('helpHinted', false)){ setTimeout(()=>{ MS.store.set('helpHinted', true); toast('New here? Help ▸ Help centre (or F1) has a guided tour for every feature.', 7000); }, 9000); }
