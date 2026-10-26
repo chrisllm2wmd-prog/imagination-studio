@@ -1,4 +1,4 @@
-IMAGINATION STUDIO v3.94 beta  (web version)
+IMAGINATION STUDIO v3.95 beta  (web version)
 
 Upload everything in this folder to any static web host (GitHub Pages, Netlify, Cloudflare Pages, your own server).
 No server code is needed. Do NOT add serve.ps1 to a public site.

@@ -67,7 +67,7 @@ const bar = (html, btns)=>{
 };
 const hide = ()=>{ const b = document.getElementById('pwaBar'); if(b) b.remove(); };
 let reloading = false;
-navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(reloading) return; reloading = true; location.reload(); });
+navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(reloading) return; reloading = true; try{ sessionStorage.setItem('ms.skipSplash', '1'); }catch(e){} location.reload(); });
 function updateReady(w){ bar('A new version of Imagination Studio is ready.', [['Update now', ()=>{ w.postMessage('skipWaiting'); }], ['Later', hide]]); }
 navigator.serviceWorker.register('sw.js').then(reg=>{
   navigator.serviceWorker.ready.then(r=>{ if(r.active) setTimeout(()=> r.active.postMessage('cacheFonts'), 8000); });   // after the app has settled

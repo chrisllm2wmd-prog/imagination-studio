@@ -410,11 +410,16 @@ function probeTitle(){
 }
 async function showSplash(){
   const art = await probeTitle();
+  let skip = false; try{ skip = sessionStorage.getItem('ms.skipSplash') === '1'; sessionStorage.removeItem('ms.skipSplash'); }catch(e){}
+  let ov = document.getElementById('splash');
+  if(!ov){ ov = document.createElement('div'); ov.id = 'splash'; ov.innerHTML = '<div class="sp-default"><div class="sp-mark">' + MS.icon('logo') + '</div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div>'; document.body.appendChild(ov); }
+  if(skip){ ov.classList.add('out'); setTimeout(()=> ov.remove(), 400); return;   // just updated and reloaded: go straight back in, no title screen again
+  }
   return new Promise(res=>{
-    const ov = document.createElement('div'); ov.id = 'splash';
-    ov.innerHTML = (art ? '<img class="sp-art" src="' + art + '" alt="Imagination Studio">' : '<div class="sp-default"><div class="sp-mark">' + MS.icon('logo') + '</div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div>') +
-      '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><div class="sp-bottom"><button class="btn primary sp-go" id="spGo">Start creating</button><button class="sp-install" id="spInstall" title="Free · works offline · updates itself" style="display:none"><span>' + MS.icon('download') + 'Install Imagination Studio</span></button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div></div>';
-    document.body.appendChild(ov); MS.pwaSync && MS.pwaSync();
+    if(art) ov.innerHTML = '<img class="sp-art" src="' + art + '" alt="Imagination Studio">';
+    const ld = ov.querySelector('.sp-load'); if(ld) ld.remove();
+    ov.insertAdjacentHTML('beforeend', '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><div class="sp-bottom"><button class="btn primary sp-go" id="spGo">Start creating</button><button class="sp-install" id="spInstall" title="Free · works offline · updates itself" style="display:none"><span>' + MS.icon('download') + 'Install Imagination Studio</span></button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div></div>');
+    MS.pwaSync && MS.pwaSync();
     const go = ()=>{ document.removeEventListener('keydown', key, true); ov.classList.add('out'); setTimeout(()=> ov.remove(), 400); res(); };
     const key = e=>{ if(e.key === 'Enter' || e.key === ' ' || e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); go(); } };
     document.addEventListener('keydown', key, true); ov.addEventListener('click', go);

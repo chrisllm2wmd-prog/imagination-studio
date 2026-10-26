@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' data: blob: https://api.anthropic.com; object-src 'none'; base-uri 'self'; form-action 'none'">
 <title>Imagination Studio</title>
+<style>html,body{background:#0b0c10;margin:0}</style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0c0e18">
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
@@ -13,6 +14,9 @@
 <link rel="stylesheet" href="css/studio.css">
 </head>
 <body data-ws="logo">
+
+<!-- title screen, in the page itself so it is on screen from the very first paint (boot.js reuses it: no flash of the bare editor while scripts load) -->
+<div id="splash"><div class="sp-default"><div class="sp-mark"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 9-8 9-8-9zM12 8l4 4-4 4-4-4z"/></svg></div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div><div class="sp-load"><i></i></div></div>
 
 <input type="file" id="fileImportInput" accept="image/*,.svg" multiple hidden>
 <input type="file" id="bgImageInput" accept="image/*" hidden>

@@ -567,3 +567,12 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .hc-link:hover{border-color:var(--acc);background:var(--bg2,var(--bg0));}
 .hc-link b{font-size:13.5px;} .hc-link span{font-size:12.5px;color:var(--mut);} .hc-link em{font-style:normal;font-size:13px;color:var(--acc);margin-top:2px;}
 .about-links{margin-top:12px;font-size:12.5px;} .about-links a{color:var(--acc);text-decoration:none;} .about-links a:hover{text-decoration:underline;}
+
+/* title screen is present from the first paint: a thin loader until the editor is ready, then the controls fade in (no flashing between screens) */
+#splash .sp-load{position:absolute;bottom:9vh;left:50%;width:120px;height:3px;margin-left:-60px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;}
+#splash .sp-load i{display:block;width:40%;height:100%;border-radius:3px;background:var(--acc);animation:spLoad 1.1s ease-in-out infinite;}
+@keyframes spLoad{0%{transform:translateX(-110%);}100%{transform:translateX(280%);}}
+#splash .sp-ver,#splash .sp-bottom{animation:spFade .35s ease-out both;}
+@keyframes spFade{from{opacity:0;}to{opacity:1;}}
+#splash{cursor:default;} #splash:has(.sp-go){cursor:pointer;}
+@media (prefers-reduced-motion:reduce){#splash .sp-load i{animation:none;width:100%;}#splash .sp-ver,#splash .sp-bottom{animation:none;}}
