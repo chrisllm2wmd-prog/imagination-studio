@@ -582,3 +582,11 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 #splash{cursor:default;} #splash:has(.sp-go){cursor:pointer;}
 @media (prefers-reduced-motion:reduce){#splash .sp-load i{animation:none;width:100%;}#splash .sp-ver,#splash .sp-bottom{animation:none;}}
 
+
+/* live symmetry button + settings, shape style hover menu */
+.shape-style button{min-width:150px;} .shape-style .ic{flex:none;}
+#toolbox .tool.sym-on{background:var(--accbg);border-color:var(--accln);color:var(--acc2);box-shadow:inset 0 0 0 1px var(--accln);}
+.sym-pop{position:fixed;z-index:3000;width:262px;background:var(--bg2);border:1px solid var(--line2);border-radius:10px;padding:10px;box-shadow:0 10px 36px #000a;display:flex;flex-direction:column;gap:8px;font-size:12px;}
+.sym-pop .sp-h{display:flex;align-items:center;gap:8px;} .sym-pop .sp-h b{flex:1;font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mut);}
+.sym-pop .chips{display:flex;flex-wrap:wrap;gap:4px;} .sym-pop .seg{display:flex;} .sym-pop .seg button{flex:1;}
+.sb-sym{margin-left:8px;padding:0 8px;border-radius:9px;background:var(--accbg);border:1px solid var(--accln);color:var(--acc2);font-size:11px;cursor:pointer;white-space:nowrap;}

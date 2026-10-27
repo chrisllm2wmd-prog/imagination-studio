@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.14 beta';
+window.IMAGINATION_VERSION = '4.15 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -536,6 +536,7 @@ const P = {
   rotate:'M20 11a8 8 0 10-2.3 5.7M20 4v7h-7',
   rot90:'M4 12a8 8 0 018-8h5M14 1l3 3-3 3M20 12v8H12',
   mirror:'M12 3v18M9 7H4v10h5zM15 7h5v10h-5z',
+  symlive:'M12 3v18M4 6l5 3.5v5L4 18zM20 6l-5 3.5v5l5 3.5zM12 21m-1 0a1 1 0 102 0 1 1 0 10-2 0',
   kaleido:'M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4M12 12m-9 0a9 9 0 1018 0 9 9 0 10-18 0',
   radial:'M12 12m-2 0a2 2 0 104 0 2 2 0 10-4 0M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8',
   layers:'M12 3l9 5-9 5-9-5zM3 12.5l9 5 9-5M3 17l9 5 9-5',
@@ -898,6 +899,29 @@ MS.fillRange = fillRange;
   setTimeout(scan, 0);
 })();
 MS.syncRanges = root=> $$('input[type=range]', root).forEach(fillRange);
+/* Every slider gets a typed value box (with the up / down buttons) unless its row already has one. The box and the slider stay in step both
+   ways, including when the app sets the slider from code; typing past the slider's end stretches the slider. Opt out with data-noval. */
+(function(){
+  const nat = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  function addValueBox(r){
+    if(r.__vb || r.hasAttribute('data-noval') || r.id === 'zoomSlider' || r.classList.contains('hidden')) return;
+    const row = r.parentElement; if(!row || row.querySelector('input[type=number]')) return;
+    r.__vb = 1;
+    const wrap = document.createElement('div'); wrap.className = 'f vb'; wrap.style.width = '72px';
+    const n = document.createElement('input'); n.type = 'number'; n.step = r.step && r.step !== 'any' ? r.step : '1'; n.setAttribute('aria-label', 'Value'); wrap.appendChild(n); r.after(wrap);
+    const dec = (String(n.step).split('.')[1] || '').length;
+    const show = ()=>{ if(document.activeElement !== n) n.value = +(+r.value).toFixed(Math.max(dec, 2)); };
+    Object.defineProperty(r, 'value', { get(){ return nat.get.call(this); }, set(v){ nat.set.call(this, v); show(); }, configurable:true });
+    r.addEventListener('input', show);
+    n.addEventListener('input', ()=>{ const v = parseFloat(n.value); if(!isFinite(v)) return; if(v > +r.max) r.max = v; if(v < +r.min) r.min = v; nat.set.call(r, v); fillRange(r); r.dispatchEvent(new Event('input', { bubbles:true })); });
+    n.addEventListener('change', ()=>{ r.dispatchEvent(new Event('change', { bubbles:true })); show(); });
+    n.value = +(+r.value).toFixed(Math.max(dec, 2));
+  }
+  let t = 0; const scan = ()=> document.querySelectorAll('input[type=range]').forEach(addValueBox);
+  new MutationObserver(()=>{ clearTimeout(t); t = setTimeout(scan, 60); }).observe(document.documentElement, { childList:true, subtree:true });
+  setTimeout(scan, 0); MS.addValueBoxes = scan;
+})();
+
 
 /* ---------- command palette ---------- */
 MS.commands = [];
@@ -943,6 +967,19 @@ MS.initUI = function(){
   wireAccordions(document); wireDock(); wireInputs();
   MS.syncRanges(document);
 };
+
+
+/* Arrow keys walk through picture grids (patterns, scenes, swatches): moves focus and applies, like clicking */
+document.addEventListener('keydown', e=>{
+  if(!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  const b = e.target && e.target.closest && e.target.closest('.patgrid > button, .scenegrid > button, .swgrid > *'); if(!b || e.altKey || e.ctrlKey || e.metaKey) return;
+  const items = Array.from(b.parentElement.children).filter(x=> x.offsetParent !== null), i = items.indexOf(b); if(i < 0) return;
+  let cols = 0; for(const x of items){ if(x.offsetTop === items[0].offsetTop) cols++; else break; } cols = Math.max(1, cols);
+  const n = Math.max(0, Math.min(items.length - 1, i + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' ? cols : -cols)));
+  if(n === i) { e.preventDefault(); return; } e.preventDefault(); e.stopPropagation();
+  if(!items[n].hasAttribute('tabindex') && items[n].tabIndex < 0) items[n].tabIndex = 0;
+  items[n].focus(); items[n].click(); items[n].scrollIntoView({ block:'nearest' });
+}, true);
 
 })();
 
@@ -2401,11 +2438,13 @@ function fillValue(){ return S.noFill ? '' : S.fill; }
 function strokeValue(){ return S.noStroke ? null : S.stroke; }
 function pointOf(o){ return cv().getPointer(o.e); }
 function snapP(p){ return MS.snapPoint(p); }
+// when live symmetry is on, the new element's copies are made first so it is one undo step
+function commitLive(obj, label){ const lv = MS.liveSym && MS.liveSym.on && MS.liveSym.add(obj); if(lv) lv.then(()=> MS.commit(label)); else MS.commit(label); }
 function finishCreate(obj, label){
   const c = cv();
   c.discardActiveObject();
   c.setActiveObject(obj);
-  MS.commit(label);
+  commitLive(obj, label);
   if(!MS.prefs.stickyTools) T.set('move');
   else { c.requestRenderAll(); }
 }
@@ -2426,10 +2465,12 @@ function arrowPoints(len, thick, headL, headW){
   const t = thick / 2, hw = headW / 2, bodyEnd = len - headL;
   return [{x:0,y:-t},{x:bodyEnd,y:-t},{x:bodyEnd,y:-hw},{x:len,y:0},{x:bodyEnd,y:hw},{x:bodyEnd,y:t},{x:0,y:t}];
 }
-const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6 };
+const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
 
 function makeShape(kind, x0, y0, w, h, p0, p1){
-  const common = { fill: fillValue(), stroke: strokeValue(), strokeWidth: S.noStroke ? 0 : S.strokeW, strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' };
+  const outlineOnly = SHAPE_OPT.style === 'line' && kind !== 'line' && kind !== 'arrow', lineCol = S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke;
+  const common = outlineOnly ? { fill:'', stroke:lineCol, strokeWidth:Math.max(S.noStroke ? 0 : S.strokeW, SHAPE_OPT.lineW), strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' }
+    : { fill: fillValue(), stroke: strokeValue(), strokeWidth: S.noStroke ? 0 : S.strokeW, strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' };
   let o = null;
   w = Math.max(w, 1); h = Math.max(h, 1);
   if(kind === 'rect' || kind === 'rrect'){ const r = Math.min(kind === 'rrect' ? SHAPE_OPT.radius : SHAPE_OPT.rectR, w / 2, h / 2); o = new fabric.Rect({ ...common, left:x0, top:y0, width:w, height:h, rx:r, ry:r }); }
@@ -2477,7 +2518,7 @@ function shapeTool(kind, icon, key, label){
         if(e.altKey){ x0 = start.x - w; y0 = start.y - h; w *= 2; h *= 2; if(perfect){ w = h = Math.max(w, h); x0 = start.x - w/2; y0 = start.y - h/2; } }
         replace(makeShape(kind, x0, y0, w, h)); MS.showHud(temp, Math.round(w) + ' × ' + Math.round(h) + (perfect && sq ? (kind === 'ellipse' ? '  ● circle' : '  ■ square') : ''));
       }
-      cv().requestRenderAll();
+      cv().requestRenderAll(); MS.liveSym && MS.liveSym.ghost(temp);
     },
     up(p, e){
       if(!temp) return;
@@ -2489,10 +2530,10 @@ function shapeTool(kind, icon, key, label){
         temp.name = MS.nextName(kind === 'rrect' ? 'rect' : kind); cv().add(temp);
       }
       temp.setCoords(); MS.hideHud();
-      const o = temp; temp = null;
+      const o = temp; temp = null; MS.liveSym && MS.liveSym.ghost(null);
       finishCreate(o, 'Draw ' + describe(kind).toLowerCase());
     },
-    exit(){ if(temp){ cv().remove(temp); temp = null; } },
+    exit(){ if(temp){ cv().remove(temp); temp = null; } MS.liveSym && MS.liveSym.ghost(null); },
   };
   function replace(n){
     const name = temp.name; cv().remove(temp); n.name = name; temp = n; cv().add(temp);
@@ -2700,7 +2741,7 @@ function wireMouse(){
     if(S.tool !== 'pencil') return;
     const p = e.path;
     p.set({ strokeLineCap:'round', strokeLineJoin:'round', strokeUniform:true, objectCaching:false });
-    c.setActiveObject(p); MS.commit('Brush stroke');
+    c.setActiveObject(p); commitLive(p, 'Brush stroke');
   });
   MS.on('overlay', ctx=>{ const t = defs[S.tool]; if(t && t.overlay) t.overlay(ctx); });
 }
@@ -2718,7 +2759,7 @@ T.addText = function(o){
   });
   t.name = MS.nextName('text');
   c.add(t); c.discardActiveObject(); c.setActiveObject(t);
-  c.requestRenderAll(); MS.commit('Add text');
+  c.requestRenderAll(); commitLive(t, 'Add text');
   if(o.select !== false){
     MS.showPage('design');
     setTimeout(()=>{ const b = $('#propTextContent'); if(b){ b.focus(); b.select(); } }, 30);
@@ -2745,7 +2786,7 @@ T.addShape = function(kind, o){
   Object.assign(S, { fill:saved.fill, stroke:saved.stroke, noFill:saved.noFill, noStroke:saved.noStroke });
   if(!obj){ MS.shapeLib(kind); return cv().getActiveObject(); }
   obj.name = MS.nextName(kind === 'rrect' ? 'rect' : (['heart','speech','cross'].includes(kind) ? 'polygon' : kind));
-  const c = cv(); c.add(obj); c.discardActiveObject(); c.setActiveObject(obj); c.requestRenderAll(); MS.commit('Add ' + describe(kind).toLowerCase());
+  const c = cv(); c.add(obj); c.discardActiveObject(); c.setActiveObject(obj); c.requestRenderAll(); commitLive(obj, 'Add ' + describe(kind).toLowerCase());
   return obj;
 };
 T.addImage = function(src, o, cb){
@@ -2757,7 +2798,7 @@ T.addImage = function(src, o, cb){
     img.set({ left: o.x !== undefined ? o.x : S.doc.wPx/2, top: o.y !== undefined ? o.y : S.doc.hPx/2, originX:'center', originY:'center', scaleX:sc, scaleY:sc, strokeUniform:true });
     img.name = o.name || MS.nextName('image');
     const c = cv(); c.add(img); c.discardActiveObject(); c.setActiveObject(img); c.requestRenderAll();
-    MS.commit('Add picture');
+    commitLive(img, 'Add picture');
     if(!MS.prefs.stickyTools || S.tool === 'image') { if(S.tool !== 'move') T.set('move'); }
     cb && cb(img);
   }, { crossOrigin:'anonymous' });
@@ -2878,6 +2919,7 @@ T.buildToolbox = function(){
     b.setAttribute('data-tip', t.label + (t.key ? '|' + t.key : ''));
     b.innerHTML = MS.icon(t.icon);
     b.addEventListener('click', ()=> { if(group && S.tool === flyLast[group] && t.group === group && b.dataset.armed === '1'){ openFlyout(b, group); } T.set(b.dataset.tool); b.dataset.armed = '1'; setTimeout(()=>{ b.dataset.armed = ''; }, 500); });
+    if(t.isShape) styleHover(b);
     if(group){
       b.addEventListener('contextmenu', e=>{ e.preventDefault(); openFlyout(b, group); });
       let hold = null;
@@ -2889,7 +2931,8 @@ T.buildToolbox = function(){
   const sep = ()=>{ const s = document.createElement('div'); s.className = 'tool-sep'; box.appendChild(s); };
   add('move'); if(defs.node) add('node'); add('hand'); add('zoom'); sep();
   add('rect', 'shapes'); add('rrect'); add('ellipse'); add('pen'); add('pencil'); add('text'); sep();
-  add('image'); add('wand'); add('eraser'); add('dropper');
+  add('image'); add('wand'); add('eraser'); add('dropper'); sep();
+  MS.liveSym && MS.liveSym.addButton(box);
   // colour chips
   const col = document.createElement('div'); col.className = 'tool-colors';
   col.innerHTML = '<div class="sw" id="swStroke" data-tip="Stroke colour|click"><input type="color" id="swStrokeIn"></div><div class="sw" id="swFill" data-tip="Fill colour|click"><input type="color" id="swFillIn"></div><button class="swap" id="swSwap" data-tip="Swap fill & stroke|X">' + MS.icon('swap') + '</button>';
@@ -2901,6 +2944,23 @@ T.buildToolbox = function(){
   $('#swSwap').addEventListener('click', swapColors);
   T.syncSwatches();
 };
+// hover a shape tool: pick Solid or Outline (line) for everything drawn with the shape tools; remembered
+function styleHover(b){
+  let timer = null, pop = null, leave = null;
+  const kill = ()=>{ clearTimeout(timer); clearTimeout(leave); if(pop){ pop.remove(); pop = null; document.removeEventListener('mousedown', away, true); } };
+  const away = e=>{ if(pop && !pop.contains(e.target) && !b.contains(e.target)) kill(); };
+  const open = ()=>{
+    kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
+    const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
+    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>');
+    document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
+    pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
+    pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return; SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(b.dataset.tool); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines.' : 'Shapes are drawn solid.', 1800); });
+    setTimeout(()=> document.addEventListener('mousedown', away, true), 0);
+  };
+  b.addEventListener('mouseenter', ()=>{ clearTimeout(leave); if(S.tool === 'move' || true){ timer = setTimeout(open, 450); } });
+  b.addEventListener('mouseleave', ()=>{ clearTimeout(timer); leave = setTimeout(()=>{ if(pop && !pop.matches(':hover')) kill(); }, 350); });
+}
 function openFlyout(btn, group){
   const items = order.filter(id=> defs[id].group === group);
   const r = btn.getBoundingClientRect();
@@ -4825,8 +4885,25 @@ function place(){
   if(!el) return; const d = $('#dock').getBoundingClientRect();
   Object.assign(el.style, { left:d.left + 'px', top:d.top + 'px', width:d.width + 'px', height:d.height + 'px' });
 }
-function onKey(e){ if(e.key === 'Escape' && el){ e.stopPropagation(); close(); } }
-function close(){ onPick = null; if(!el) return; window.removeEventListener('resize', place); MS.off('resize', place); document.removeEventListener('keydown', onKey, true); el.remove(); el = null; }
+let kb = null;
+function onKey(e){
+  if(e.key === 'Escape' && el){ e.stopPropagation(); close(); return; }
+  if(!el || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'PageDown' && e.key !== 'PageUp' && e.key !== 'Home' && e.key !== 'End')) return;
+  if(e.target && e.target.tagName === 'SELECT') return;
+  // walk the list in a fixed order (the Favourites / Recently used shortcuts shuffle every time a font is applied, so they are skipped)
+  const key = cat + '|' + q;
+  if(!kb || kb.key !== key){
+    const names = [], seen = new Set(); let skip = false;
+    $$('#fbList > *', el).forEach(n=>{ if(n.classList.contains('fb-cat-h')){ skip = /^(★|Recently)/.test(n.textContent); return; } if(!skip && n.classList.contains('fb-item') && !seen.has(n.dataset.n)){ seen.add(n.dataset.n); names.push(n.dataset.n); } });
+    kb = { key, names };
+  }
+  const names = kb.names; if(!names.length) return; e.preventDefault(); e.stopPropagation();
+  const cur = names.indexOf(currentFont()), jump = e.key === 'PageDown' ? 8 : e.key === 'PageUp' ? -8 : 0;
+  let i = e.key === 'Home' ? 0 : e.key === 'End' ? names.length - 1 : cur < 0 ? 0 : cur + (e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : jump);
+  i = Math.max(0, Math.min(names.length - 1, i));
+  const it = $$('#fbList .fb-item', el).find(x=> x.dataset.n === names[i]); if(it){ it.click(); const now = $$('#fbList .fb-item', el).find(x=> x.dataset.n === names[i] && x.closest('#fbList')); now && now.scrollIntoView({ block:'nearest' }); }   // same as clicking it: applies the font
+}
+function close(){ onPick = null; kb = null; if(!el) return; window.removeEventListener('resize', place); MS.off('resize', place); document.removeEventListener('keydown', onKey, true); el.remove(); el = null; }
 MS.closeFontBrowser = close;
 
 function currentFont(){
@@ -5108,6 +5185,103 @@ async function openDialog(kind){
   ['kdPivot','kdPx','kdPy','kdClip','kdAlt','kdGroup','kdFlat','kdRm'].forEach(id=> q(id).addEventListener('input', refresh)); q('kdPivot').addEventListener('change', refresh);
   MS.syncRanges(body); refresh();
 }
+
+/* ---- LIVE symmetry: one toolbox switch; while it is on, everything you add (shapes, brush, pen, text, pictures) is
+   copied by the chosen Mirror / Radial / Kaleidoscope setting, and shapes show their copies live while you drag. ---- */
+const LIVE = MS.liveSym = { on:false, ghosts:[], busy:false };
+const LIVE_DEF = { kind:'kaleido', axes:['v'], n:8, offset:0, pivot:'art', px:50, py:50, clip:true, alt:false };
+LIVE.cfg = Object.assign({}, LIVE_DEF, MS.store.get('liveSym', {}));
+const saveCfg = ()=> MS.store.set('liveSym', LIVE.cfg);
+const liveOpt = ()=>{ const c = LIVE.cfg; return { kind:c.kind, axes:c.axes.slice(), n:Math.max(2, +c.n || 8), offset:+c.offset || 0, clip:c.kind === 'kaleido' && !!c.clip, alt:!!c.alt, pivot:pivotFn(c.pivot, c.px, c.py), label:'Symmetry' }; };
+const liveLabel = ()=>{ const c = LIVE.cfg; return c.kind === 'mirror' ? 'Mirror ' + c.axes.length + '-way' : c.kind === 'radial' ? 'Radial ×' + c.n : 'Kaleidoscope ×' + c.n; };
+
+LIVE.add = async function(obj){
+  if(!LIVE.on || LIVE.busy || !obj) return; LIVE.busy = true;
+  try{
+    const c = cv(), clone = await cloneAsync(obj), res = await build({ group:clone, originals:[obj] }, liveOpt());
+    if(res.replaceBase){            // kaleidoscope: the segments are the art, so they replace the one you drew
+      c.remove(obj); res.copies.forEach(o=> c.add(o)); c.discardActiveObject();
+      c.setActiveObject(new fabric.ActiveSelection(res.copies.slice(), { canvas:c }));
+    } else {
+      res.copies.forEach(o=>{ o.name = (o.name || 'Copy'); c.add(o); }); c.setActiveObject(obj);
+    }
+    c.requestRenderAll();
+  } catch(e){ console.error(e); }
+  finally { LIVE.busy = false; }
+};
+let ghostBusy = false, ghostNext;
+LIVE.ghost = async function(obj){
+  if(!LIVE.on || !obj){ ghostNext = undefined; if(LIVE.ghosts.length){ LIVE.ghosts = []; cv().requestRenderAll(); } return; }
+  if(ghostBusy){ ghostNext = obj; return; } ghostBusy = true;
+  try{
+    const clone = await cloneAsync(obj), res = await build({ group:clone, originals:[obj] }, liveOpt());
+    LIVE.ghosts = res.copies; cv().requestRenderAll();
+  } catch(e){ /* a half-drawn shape can fail to clone: the next move event retries */ }
+  ghostBusy = false; if(ghostNext){ const n = ghostNext; ghostNext = undefined; LIVE.ghost(n); }
+};
+function setOn(v){
+  ensureHook(); LIVE.on = v; LIVE.ghosts = [];
+  $$('#toolbox .tool[data-live]').forEach(b=> b.classList.toggle('sym-on', v));
+  let chip = $('#sbSym'); const sb = $('#statusbar');
+  if(v && sb){ if(!chip){ chip = document.createElement('span'); chip.id = 'sbSym'; chip.className = 'sb-sym'; chip.title = 'Live symmetry is on - click to turn off'; chip.onclick = ()=> setOn(false); sb.insertBefore(chip, $('#sbSnap')); } chip.textContent = '◈ ' + liveLabel(); }
+  else if(chip) chip.remove();
+  cv() && cv().requestRenderAll();
+}
+function refreshChip(){ const chip = $('#sbSym'); if(chip) chip.textContent = '◈ ' + liveLabel(); }
+LIVE.addButton = function(box){
+  const b = document.createElement('button'); b.className = 'tool' + (LIVE.on ? ' sym-on' : ''); b.dataset.live = '1';
+  b.setAttribute('data-tip', 'Live symmetry|everything you add follows the mirror / kaleidoscope setting. Hover or right-click for settings.');
+  b.innerHTML = MS.icon('symlive'); box.appendChild(b);
+  b.addEventListener('click', ()=>{ setOn(!LIVE.on); if(LIVE.on) openPop(b); else closePop(); });
+  b.addEventListener('contextmenu', e=>{ e.preventDefault(); openPop(b); });
+  let hv = null; b.addEventListener('mouseenter', ()=>{ hv = setTimeout(()=> openPop(b), 450); }); b.addEventListener('mouseleave', ()=> clearTimeout(hv));
+};
+let pop = null;
+function closePop(){ if(pop){ pop.remove(); pop = null; document.removeEventListener('mousedown', awayPop, true); document.removeEventListener('keydown', escPop, true); } }
+const awayPop = e=>{ if(pop && !pop.contains(e.target) && !e.target.closest('[data-live]')) closePop(); };
+const escPop = e=>{ if(e.key === 'Escape') closePop(); };
+function openPop(anchor){
+  closePop(); MS.closeMenus && MS.closeMenus();
+  pop = document.createElement('div'); pop.className = 'sym-pop'; const r = anchor.getBoundingClientRect();
+  document.body.appendChild(pop);
+  const draw = ()=>{
+    const c = LIVE.cfg, K = c.kind;
+    pop.innerHTML = `<div class="sp-h"><b>Live symmetry</b><label class="switch"><input type="checkbox" id="lsOn" ${LIVE.on ? 'checked' : ''}><span class="sw-ui"></span></label></div>
+      <div class="seg" id="lsKind"><button data-k="mirror" class="${K === 'mirror' ? 'active' : ''}">Mirror</button><button data-k="radial" class="${K === 'radial' ? 'active' : ''}">Radial</button><button data-k="kaleido" class="${K === 'kaleido' ? 'active' : ''}">Kaleidoscope</button></div>
+      ${K === 'mirror' ? `<div class="chips" id="lsAxes">${[['v', '↔ Left/right'], ['h', '↕ Up/down'], ['d1', '⤢ Diagonal'], ['d2', '⤡ Diagonal']].map(a=> `<span class="chip${c.axes.includes(a[0]) ? ' active' : ''}" data-a="${a[0]}">${a[1]}</span>`).join('')}</div>`
+      : `<div class="r"><label style="width:62px">Segments</label><input type="range" id="lsN" min="2" max="48" value="${c.n}"><div class="f" style="width:50px"><input type="number" id="lsNn" min="2" max="96" value="${c.n}"></div></div>
+         <div class="chips" id="lsPre">${[3, 4, 5, 6, 8, 10, 12, 16, 24, 32].map(n=> `<span class="chip${+c.n === n ? ' active' : ''}" data-n="${n}">${n}</span>`).join('')}</div>
+         <div class="r"><label style="width:62px">Rotate</label><input type="range" id="lsOff" min="0" max="360" value="${c.offset}"><div class="f" style="width:50px"><input type="number" id="lsOffn" min="0" max="360" value="${c.offset}"></div></div>
+         ${K === 'kaleido' ? `<label class="chk"><input type="checkbox" id="lsClip" ${c.clip ? 'checked' : ''}> Clip to wedges (true kaleidoscope)</label>${c.n % 2 ? '<div class="hint">Odd counts can’t mirror perfectly - use an even number.</div>' : ''}` : `<label class="chk"><input type="checkbox" id="lsAlt" ${c.alt ? 'checked' : ''}> Mirror every other copy</label>`}`}
+      <div><div class="hint" style="margin-bottom:4px">Centre of symmetry</div><select id="lsPivot" style="width:100%"><option value="art" ${c.pivot === 'art' ? 'selected' : ''}>Centre of the artboard</option><option value="custom" ${c.pivot === 'custom' ? 'selected' : ''}>Custom point…</option></select>
+        <div class="r two" style="margin-top:6px;display:${c.pivot === 'custom' ? '' : 'none'}"><div class="f"><span>X</span><input type="number" id="lsPx" value="${c.px}"><em>%</em></div><div class="f"><span>Y</span><input type="number" id="lsPy" value="${c.py}"><em>%</em></div></div></div>
+      <div class="hint">${LIVE.on ? 'On: draw, type or add anything and it is copied by this setting.' : 'Off: switch it on to start.'}</div>`;
+    MS.syncRanges && MS.syncRanges(pop);
+    pop.style.left = Math.min(innerWidth - 274, r.right + 8) + 'px'; pop.style.top = Math.max(8, Math.min(r.top, innerHeight - pop.offsetHeight - 8)) + 'px';
+  };
+  const q = id=> pop.querySelector('#' + id), upd = ()=>{ saveCfg(); refreshChip(); };
+  pop.addEventListener('click', e=>{
+    const k = e.target.closest('#lsKind button'), a = e.target.closest('#lsAxes .chip'), n = e.target.closest('#lsPre .chip');
+    if(k){ LIVE.cfg.kind = k.dataset.k; if(k.dataset.k === 'kaleido' && LIVE.cfg.n % 2) LIVE.cfg.n = 8; upd(); draw(); }
+    else if(a){ const ax = LIVE.cfg.axes, v = a.dataset.a, i = ax.indexOf(v); if(i >= 0 && ax.length > 1) ax.splice(i, 1); else if(i < 0) ax.push(v); upd(); draw(); }
+    else if(n){ LIVE.cfg.n = +n.dataset.n; upd(); draw(); }
+  });
+  pop.addEventListener('input', e=>{
+    const id = e.target.id, v = e.target.value;
+    if(id === 'lsOn'){ setOn(e.target.checked); draw(); return; }
+    if(id === 'lsN' || id === 'lsNn'){ LIVE.cfg.n = Math.max(2, +v || 8); const o = id === 'lsN' ? q('lsNn') : q('lsN'); o.value = LIVE.cfg.n; upd(); }
+    else if(id === 'lsOff' || id === 'lsOffn'){ LIVE.cfg.offset = +v || 0; const o = id === 'lsOff' ? q('lsOffn') : q('lsOff'); o.value = LIVE.cfg.offset; upd(); }
+    else if(id === 'lsClip'){ LIVE.cfg.clip = e.target.checked; upd(); } else if(id === 'lsAlt'){ LIVE.cfg.alt = e.target.checked; upd(); }
+    else if(id === 'lsPivot'){ LIVE.cfg.pivot = v; upd(); draw(); } else if(id === 'lsPx'){ LIVE.cfg.px = +v; upd(); } else if(id === 'lsPy'){ LIVE.cfg.py = +v; upd(); }
+    if(e.target.type === 'range') MS.fillRange && MS.fillRange(e.target);
+  });
+  pop.addEventListener('change', e=>{ if(e.target.id === 'lsN' || e.target.id === 'lsNn') draw(); });
+  draw(); setTimeout(()=>{ document.addEventListener('mousedown', awayPop, true); document.addEventListener('keydown', escPop, true); }, 0);
+}
+// the copies being drawn live (shapes show them while you drag)
+let hooked = false;
+function ensureHook(){ if(hooked || !cv()) return; hooked = true; cv().on('after:render', ()=>{ if(!LIVE.on || !LIVE.ghosts.length) return; const c = cv(), ctx = c.contextContainer; ctx.save(); ctx.transform.apply(ctx, c.viewportTransform); LIVE.ghosts.forEach(o=>{ try{ o.render(ctx); }catch(e){} }); ctx.restore(); }); }
+
 MS.symmetry = { _dbg:{ sourceGroup, build, pivotFn }, openMirror:()=> openDialog('mirror'), openKaleido:()=> openDialog('kaleido'), openRadial:()=> openDialog('radial') };
 MS.initSymmetry = function(){
   MS.addCommand({ title:'Mirror copy…', cat:'Object', kw:'flip symmetry reflect', run:()=> MS.symmetry.openMirror() });
