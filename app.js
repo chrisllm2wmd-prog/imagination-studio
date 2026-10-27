@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.13 beta';
+window.IMAGINATION_VERSION = '4.14 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -1315,6 +1315,124 @@ P.icon = function(k){
   return '<img src="' + P._ic[k] + '" style="width:100%;height:100%;display:block" draggable="false">';
 };
 NEW.forEach(([k, label])=> P.list.push({ k, label }));
+})();
+
+;
+/* js/textures.js */
+/* Imagination Studio - texture pack: 40 surface textures (paper, fabric, leather, wood, stone, metal, camo, grunge ...).
+   Added on top of patterns.js / patterns2.js, so they show up in the same places: Background > Patterns and, through
+   "Gradient / pattern...", as a fill for any selected shape or text. Same render(kind, colourA, colourB, w, h) call:
+   colour A is the base material colour, colour B is the accent (grain lines, veins, rust, camo patches ...); light and shade
+   are drawn in white / black, so they work with any colours (or fades) the user picks. Everything is generated, nothing is bundled. */
+(function(){
+'use strict';
+const MS = window.MS, P = MS.patterns; if(!P) return;
+const baseRender = P.render, baseIcon = P.icon;
+const TAU = Math.PI * 2;
+
+/* ---------- seeded noise ---------- */
+function hash(x, y, s){ let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul((s | 0) + 1, 1103515245); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+const smooth = t=> t * t * (3 - 2 * t);
+function vnoise(x, y, s){ const ix = Math.floor(x), iy = Math.floor(y), fx = smooth(x - ix), fy = smooth(y - iy);
+  const a = hash(ix, iy, s), b = hash(ix + 1, iy, s), c = hash(ix, iy + 1, s), d = hash(ix + 1, iy + 1, s); return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy; }
+function fbm(x, y, oct, s){ let v = 0, a = .5, n = 0; for(let i = 0; i < oct; i++){ v += a * vnoise(x, y, (s || 0) + i * 7); n += a; a *= .5; x *= 2; y *= 2; } return v / n; }
+function worley(x, y, s){ const ix = Math.floor(x), iy = Math.floor(y); let f1 = 9, f2 = 9, id = 0;
+  for(let j = -1; j <= 1; j++) for(let i = -1; i <= 1; i++){ const cx = ix + i, cy = iy + j, px = cx + hash(cx, cy, s), py = cy + hash(cx, cy, s + 1), d = Math.hypot(px - x, py - y);
+    if(d < f1){ f2 = f1; f1 = d; id = hash(cx, cy, s + 2); } else if(d < f2) f2 = d; }
+  return [f1, f2, id]; }
+const ss = (a, b, t)=> { t = Math.min(1, Math.max(0, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/* ---------- the textures: each returns [shade 0..1 (0.5 = neutral), accent 0..1] for a pixel; q = feature size in pixels ---------- */
+const PIX = {
+  'tx-grain':    (x, y, q)=> [.5 + (hash(x, y, 1) - .5) * .5, 0],
+  'tx-paper':    (x, y, q)=> [.5 + (hash(x, y, 2) - .5) * .28 + (fbm(x / q * .7, y / q * .7, 3, 3) - .5) * .35, hash(x >> 1, y >> 1, 9) > .993 ? .55 : 0],
+  'tx-canvas':   (x, y, q)=> { const p = q * .22, t = (Math.floor(x / p) + Math.floor(y / p)) & 1; return [.5 + (t ? .17 * Math.sin(x / p * TAU) : .17 * Math.sin(y / p * TAU)) + (hash(x, y, 4) - .5) * .14, 0]; },
+  'tx-linen':    (x, y, q)=> [.5 + (vnoise(x / (q * 4), y / (q * .12), 5) - .5) * .5 + (vnoise(x / (q * .12), y / (q * 4), 6) - .5) * .4 + (hash(x, y, 7) - .5) * .12, 0],
+  'tx-denim':    (x, y, q)=> { const d = (x + y) / (q * .17); return [.5 + .2 * Math.sin(d * TAU) + (fbm(x / q * .4, y / q * .4, 3, 8) - .5) * .3 + (hash(x, y, 9) - .5) * .16, ss(.6, .78, fbm(x / q * .3, y / q * .3, 3, 10)) * .35]; },
+  'tx-burlap':   (x, y, q)=> { const p = q * .5, a = Math.sin(x / p * TAU), b = Math.sin(y / p * TAU); return [a * b < -.5 ? .08 : .52 + .16 * (a + b) * .5 + (vnoise(x / (q * .3), y / (q * .3), 11) - .5) * .35, 0]; },
+  'tx-leather':  (x, y, q)=> { const w = worley(x / (q * .45), y / (q * .45), 12); return [.28 + .62 * ss(0, .75, w[0]) + (hash(x, y, 13) - .5) * .08, ss(.05, .0, w[1] - w[0]) * .35]; },
+  'tx-wood':     (x, y, q)=> { const t = Math.sin((y / (q * .8) + fbm(x / (q * 5), y / (q * 1.4), 3, 14) * 3.2) * TAU); return [.5 + .22 * t + (fbm(x / (q * 7), y / (q * .1), 3, 15) - .5) * .4, Math.max(0, -t - .45) * .9]; },
+  'tx-planks':   (x, y, q)=> { const pw = q * 3.2, id = Math.floor(x / pw), lx = x - id * pw, sh = hash(id, 0, 16) * 900, t = Math.sin(((y + sh) / (q * .8) + fbm(lx / (q * 5), (y + sh) / (q * 1.4), 3, 17 + id) * 3) * TAU);
+                    if(lx < 1.5 || lx > pw - 1.5) return [.08, 0]; return [.5 + (hash(id, 1, 18) - .5) * .25 + .2 * t + (fbm(lx / (q * 7), (y + sh) / (q * .1), 3, 19) - .5) * .3, Math.max(0, -t - .5) * .8]; },
+  'tx-marble':   (x, y, q)=> { const v = Math.abs(Math.sin((x / q * .45 + y / q * .3 + fbm(x / (q * 3), y / (q * 3), 5, 20) * 4.5) * Math.PI)); return [.55 + (fbm(x / q * .8, y / q * .8, 4, 21) - .5) * .35, (1 - ss(0, .13, v)) * .9]; },
+  'tx-granite':  (x, y, q)=> { const h = hash(Math.floor(x / 1.6), Math.floor(y / 1.6), 22), n = fbm(x / q * .5, y / q * .5, 3, 23); return [h > .82 ? .92 : h < .18 ? .08 : .5 + (n - .5) * .35, h > .46 && h < .5 ? .7 : 0]; },
+  'tx-concrete': (x, y, q)=> [(hash(x, y, 24) > .993 ? .1 : .5 + (fbm(x / q * .7, y / q * .7, 5, 25) - .5) * .55 + (hash(x, y, 26) - .5) * .2), 0],
+  'tx-brushed':  (x, y, q)=> [.5 + (vnoise(x / (q * 7), y / (q * .05), 27) - .5) * .55 + (vnoise(x / (q * 2), y / (q * .03), 28) - .5) * .25 + (hash(x, y, 29) - .5) * .08, 0],
+  'tx-carbon':   (x, y, q)=> { const c = q * .24, a = Math.floor(x / c), b = Math.floor(y / c), t = (a + b) & 1, fx = (x / c) % 1, fy = (y / c) % 1; return [t ? .2 + .55 * fy : .2 + .55 * fx, 0]; },
+  'tx-diamond':  (x, y, q)=> { const c = q * .55, a = (x / c) % 1, b = (y / c) % 1, odd = (Math.floor(x / c) + Math.floor(y / c)) & 1, d = odd ? Math.abs(a - .5) * 2.4 + Math.abs(b - .5) * .8 : Math.abs(a - .5) * .8 + Math.abs(b - .5) * 2.4; return [d < .9 ? .8 - d * .15 : .3, 0]; },
+  'tx-rust':     (x, y, q)=> { const n = fbm(x / q * .5, y / q * .5, 5, 30); return [.5 + (n - .5) * .55 + (hash(x, y, 31) - .5) * .28, ss(.46, .68, n) * .85]; },
+  'tx-cobble':   (x, y, q)=> { const w = worley(x / (q * 1.1), y / (q * 1.1), 32); if(w[1] - w[0] < .07) return [.1, 0]; return [.5 + (w[2] - .5) * .35 + (fbm(x / q * 1.5, y / q * 1.5, 3, 33) - .5) * .3, w[2] > .7 ? .25 : 0]; },
+  'tx-sand':     (x, y, q)=> [.5 + (hash(x, y, 34) - .5) * .5 + (fbm(x / q * .2, y / q * .2, 3, 35) - .5) * .2, hash(x, y, 36) > .97 ? .5 : 0],
+  'tx-cork':     (x, y, q)=> { const w = worley(x / (q * .3), y / (q * .3), 37); return [.5 + (fbm(x / q * 1.2, y / q * 1.2, 3, 38) - .5) * .45 + (hash(x, y, 39) - .5) * .18, w[2] > .55 && w[0] < .4 ? .65 : 0]; },
+  'tx-glitter':  (x, y, q)=> { const h = hash(x, y, 40); return [h > .985 ? 1 : h < .012 ? 0 : .5 + (hash(x, y, 41) - .5) * .12, h > .965 ? .8 : 0]; },
+  'tx-foil':     (x, y, q)=> { const r = 1 - Math.abs(2 * fbm(x / (q * 1.5), y / (q * 1.5), 4, 42) - 1); return [.12 + .78 * Math.pow(r, 1.6) + .12 * Math.sin((x + y) / q * .8), 0]; },
+  'tx-frost':    (x, y, q)=> { const r = 1 - Math.abs(2 * fbm(x / (q * .5), y / (q * .5), 4, 43) - 1); return [.45 + .55 * Math.pow(r, 3) + (hash(x, y, 44) - .5) * .12, 0]; },
+  'tx-clouds':   (x, y, q)=> [.3 + .7 * fbm(x / (q * 3), y / (q * 3), 5, 45), 0],
+  'tx-water':    (x, y, q)=> { const t = Math.abs(Math.sin(fbm(x / (q * 2), y / (q * 2), 3, 46) * 6 * Math.PI)); return [.3 + .7 * Math.pow(1 - t, 3), 0]; },
+  'tx-camo':     (x, y, q)=> { const a = fbm(x / (q * 2.5), y / (q * 2.5), 3, 47), b = fbm(x / (q * 2.5), y / (q * 2.5), 3, 57), c = fbm(x / (q * 2.5), y / (q * 2.5), 3, 67); return [c > .6 ? .78 : b > .58 ? .18 : .5, a > .55 ? .95 : 0]; },
+  'tx-digicamo': (x, y, q)=> { const s = q * .32, bx = Math.floor(x / s), by = Math.floor(y / s), a = fbm(bx * .16, by * .16, 3, 48), b = fbm(bx * .16, by * .16, 3, 58); return [b > .56 ? .15 : a < .42 ? .8 : .5, a > .56 ? .95 : 0]; },
+  'tx-grunge':   (x, y, q)=> { const n = fbm(x / q * .6, y / q * .6, 5, 49), h = hash(x, y, 50); return [h < .1 * n ? 0 : h > 1 - .08 * n ? 1 : .5 + (n - .5) * .5 + (hash(x, y, 51) - .5) * .2, ss(.6, .85, n) * .55]; },
+  'tx-watercolor': (x, y, q)=> [.5 + (fbm(x / (q * 3), y / (q * 3), 5, 52) - .5) * .85 + (vnoise(x / (q * .2), y / (q * .2), 53) - .5) * .1, ss(.5, .75, fbm(x / (q * 4), y / (q * 4), 3, 54)) * .35],
+  'tx-quilt':    (x, y, q)=> { const a = (x + y) / (q * 1.3), b = (x - y) / (q * 1.3); return [.3 + .6 * Math.pow(Math.sin(a * Math.PI) * Math.sin(b * Math.PI) * .5 + .5, .7), 0]; },
+  'tx-hammered': (x, y, q)=> { const w = worley(x / (q * .5), y / (q * .5), 55); return [.25 + .65 * (1 - ss(0, .7, w[0])) + (fbm(x / q, y / q, 2, 56) - .5) * .12, 0]; },
+  'tx-snake':    (x, y, q)=> { const w = worley(x / (q * .4) + (Math.floor(y / (q * .4)) & 1) * .5, y / (q * .5), 59); return [.28 + .6 * ss(0, .8, w[0]), ss(.15, .0, w[1] - w[0]) * .6]; },
+};
+// drawn rather than computed per pixel
+const DRAW = {
+  'tx-scratches'(ctx, W, H, A, B, q){ for(let i = 0; i < 260; i++){ const x = hash(i, 0, 70) * W, y = hash(i, 1, 70) * H, a = hash(i, 2, 70) * Math.PI, l = q * (1 + hash(i, 3, 70) * 7), k = hash(i, 4, 70);
+      ctx.strokeStyle = k < .15 ? B : k < .6 ? 'rgba(255,255,255,.28)' : 'rgba(0,0,0,.3)'; ctx.lineWidth = Math.max(.6, q * .02 * (1 + hash(i, 5, 70) * 2)); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); ctx.stroke(); } },
+  'tx-knit'(ctx, W, H, A, B, q){ const sw = q * .38, sh = q * .5; ctx.lineCap = 'round'; ctx.lineWidth = sw * .3;
+    for(let y = 0; y < H + sh; y += sh) for(let x = 0; x < W + sw; x += sw){ const o = ((y / sh | 0) & 1) ? sw / 2 : 0;
+      ctx.strokeStyle = 'rgba(255,255,255,.32)'; ctx.beginPath(); ctx.moveTo(x + o - sw * .38, y - sh * .3); ctx.lineTo(x + o, y + sh * .35); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.moveTo(x + o + sw * .38, y - sh * .3); ctx.lineTo(x + o, y + sh * .35); ctx.stroke(); } },
+  'tx-bubblewrap'(ctx, W, H, A, B, q){ const d = q * .8; for(let y = d / 2; y < H + d; y += d) for(let x = d / 2; x < W + d; x += d){ const g = ctx.createRadialGradient(x - d * .14, y - d * .16, d * .02, x, y, d * .46); g.addColorStop(0, 'rgba(255,255,255,.7)'); g.addColorStop(.35, 'rgba(255,255,255,.1)'); g.addColorStop(.85, 'rgba(0,0,0,.15)'); g.addColorStop(1, 'rgba(0,0,0,.4)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, d * .46, 0, TAU); ctx.fill(); } },
+  'tx-gravel'(ctx, W, H, A, B, q){ const n = Math.round(W * H / (q * q * .35)); for(let i = 0; i < n; i++){ const x = hash(i, 0, 80) * W, y = hash(i, 1, 80) * H, r = q * (.09 + hash(i, 2, 80) * .2), g = ctx.createRadialGradient(x - r * .3, y - r * .3, 0, x, y, r), k = hash(i, 3, 80);
+      g.addColorStop(0, k < .5 ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.2)'); g.addColorStop(1, 'rgba(0,0,0,.55)'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, r, r * (.65 + hash(i, 4, 80) * .35), hash(i, 5, 80) * 3, 0, TAU); ctx.fill(); if(k > .93){ ctx.globalAlpha = .45; ctx.fillStyle = B; ctx.fill(); ctx.globalAlpha = 1; } } },
+};
+const NEW = [['tx-grain', 'Fine Grain'], ['tx-paper', 'Paper'], ['tx-canvas', 'Canvas Weave'], ['tx-linen', 'Linen'], ['tx-denim', 'Denim'], ['tx-burlap', 'Burlap'], ['tx-knit', 'Knit'], ['tx-quilt', 'Quilted'],
+  ['tx-leather', 'Leather'], ['tx-snake', 'Snakeskin'], ['tx-wood', 'Wood Grain'], ['tx-planks', 'Wood Planks'], ['tx-cork', 'Cork'], ['tx-marble', 'Marble'], ['tx-granite', 'Granite'], ['tx-concrete', 'Concrete'],
+  ['tx-cobble', 'Cobblestone'], ['tx-gravel', 'Gravel'], ['tx-sand', 'Sand'], ['tx-brushed', 'Brushed Metal'], ['tx-diamond', 'Diamond Plate'], ['tx-hammered', 'Hammered Metal'], ['tx-carbon', 'Carbon Fibre'],
+  ['tx-foil', 'Crumpled Foil'], ['tx-glitter', 'Glitter'], ['tx-rust', 'Rust'], ['tx-grunge', 'Grunge'], ['tx-scratches', 'Scratches'], ['tx-frost', 'Frost'], ['tx-clouds', 'Clouds'], ['tx-water', 'Water Caustics'],
+  ['tx-watercolor', 'Watercolour'], ['tx-camo', 'Woodland Camo'], ['tx-digicamo', 'Digital Camo'], ['tx-bubblewrap', 'Bubble Wrap']];
+const KEYS = new Set(NEW.map(n=> n[0]));
+
+function paint(kind, ctx, W, H, A, B){
+  const q0 = Math.max(14, Math.round(Math.min(W, H) / 18));
+  if(DRAW[kind]){ ctx.save(); DRAW[kind](ctx, W, H, A, B, q0); ctx.restore(); return; }
+  const fn = PIX[kind]; if(!fn) return;
+  const wr = Math.min(1, 512 / Math.max(W, H)), w = Math.max(1, Math.ceil(W * wr)), h = Math.max(1, Math.ceil(H * wr)), q = q0 * wr * 1.4;
+  const shade = new ImageData(w, h), acc = new ImageData(w, h), sd = shade.data, ad = acc.data;
+  for(let y = 0, i = 0; y < h; y++) for(let x = 0; x < w; x++, i += 4){
+    const r = fn(x, y, q), d = (Math.min(1, Math.max(0, r[0])) - .5) * 2;
+    if(d < 0){ sd[i + 3] = -d * 235; } else { sd[i] = sd[i + 1] = sd[i + 2] = 255; sd[i + 3] = d * 215; }
+    ad[i + 3] = Math.min(1, Math.max(0, r[1])) * 255;
+  }
+  const mkc = (data, wd, ht)=> { const c = document.createElement('canvas'); c.width = wd; c.height = ht; c.getContext('2d').putImageData(data, 0, 0); return c; };
+  const tc = document.createElement('canvas'); tc.width = W; tc.height = H; const t = tc.getContext('2d'); t.imageSmoothingEnabled = true; t.drawImage(mkc(acc, w, h), 0, 0, W, H);
+  t.globalCompositeOperation = 'source-in'; t.fillStyle = B; t.fillRect(0, 0, W, H);
+  ctx.drawImage(tc, 0, 0); ctx.drawImage(mkc(shade, w, h), 0, 0, W, H);
+}
+P.render = function(kind, colorA, colorB, pw, ph){
+  if(!KEYS.has(kind)) return baseRender(kind, colorA, colorB, pw, ph);
+  const off = document.createElement('canvas'); off.width = Math.max(1, Math.round(pw)); off.height = Math.max(1, Math.round(ph));
+  const ctx = off.getContext('2d');
+  const mk = c=>{ if(!c || typeof c === 'string') return c; const { colors, angle } = c.fade, rad = angle * Math.PI / 180, w = off.width, h = off.height, n = colors.length;
+    const g = ctx.createLinearGradient(w / 2 - Math.cos(rad) * w / 2, h / 2 - Math.sin(rad) * h / 2, w / 2 + Math.cos(rad) * w / 2, h / 2 + Math.sin(rad) * h / 2);
+    if(c.fade.stops) c.fade.stops.forEach(st=> g.addColorStop(Math.min(1, Math.max(0, st.offset)), st.color)); else colors.forEach((col, i)=> g.addColorStop(n > 1 ? i / (n - 1) : 0, col)); return g; };
+  const A = mk(colorA), B = mk(colorB);
+  ctx.fillStyle = A; ctx.fillRect(0, 0, off.width, off.height); ctx.fillStyle = B; ctx.strokeStyle = B;
+  paint(kind, ctx, off.width, off.height, A, B); return off;
+};
+// icons use a mid-tone base so the light and shade can be seen
+const ICON_A = { 'tx-wood':'#a9784a', 'tx-planks':'#a9784a', 'tx-leather':'#6b4a33', 'tx-snake':'#58703a', 'tx-cork':'#c49a63', 'tx-sand':'#d8c08a', 'tx-rust':'#7d8590', 'tx-camo':'#6b7a4a', 'tx-digicamo':'#6b7a4a', 'tx-water':'#2a7fb5', 'tx-clouds':'#5a8fd0', 'tx-denim':'#35527f', 'tx-watercolor':'#d8dcf0', 'tx-frost':'#7fb4d8' };
+const ICON_B = { 'tx-wood':'#3a2412', 'tx-planks':'#3a2412', 'tx-rust':'#b5521b', 'tx-camo':'#3d4a25', 'tx-digicamo':'#3d4a25', 'tx-marble':'#6c7280', 'tx-granite':'#d9d9d9', 'tx-watercolor':'#7a8fe0' };
+P.icon = function(k){
+  if(!KEYS.has(k)) return baseIcon(k);
+  P._ic = P._ic || {}; if(!P._ic[k]) P._ic[k] = P.render(k, ICON_A[k] || '#8b8f99', ICON_B[k] || '#2b2f3a', 96, 96).toDataURL('image/png');
+  return '<img src="' + P._ic[k] + '" style="width:100%;height:100%;display:block" draggable="false">';
+};
+NEW.forEach(([k, label])=> P.list.push({ k, label: label + ' (texture)' }));
 })();
 
 ;

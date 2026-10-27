@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <link rel="stylesheet" href="css/studio.css">
-<script src="app.js?v=4.13-beta" defer></script>
+<script src="app.js?v=4.14-beta" defer></script>
 </head>
 <body data-ws="logo">
 
@@ -163,7 +163,7 @@
                     <span id="propFillPreview" class="chip" style="display:none;cursor:default"></span>
                     <label class="chk mut"><input type="checkbox" id="propFillNone"> None</label>
                     <span class="grow"></span>
-                    <button class="btn sm" id="btnMoreFills" data-tip="Gradients and 22 patterns">Gradient / pattern…</button>
+                    <button class="btn sm" id="btnMoreFills" data-tip="Gradients, patterns and 35 textures">Gradient / pattern…</button>
                   </div>
                   <div class="r"><label>Stroke</label>
                     <span class="swatch-in"><input type="color" id="propStroke"></span>
@@ -175,7 +175,7 @@
                   <div class="r"><label>Style</label>
                     <div class="seg grow" id="strokeStyleSeg"><button data-v="solid" class="active">Solid</button><button data-v="dash">Dashed</button><button data-v="dot">Dotted</button></div>
                   </div>
-                  <div class="r" id="rowCorner"><label>Corners</label><input type="range" id="propRadius" min="0" max="500" value="0"><div class="f" style="width:62px"><input type="number" id="propRadiusNum" min="0" value="0"><em>px</em></div></div>
+                  <div class="r" id="rowCorner"><label>Corners</label><input type="range" id="propRadius" min="0" max="1000" value="0"><div class="f" style="width:62px"><input type="number" id="propRadiusNum" min="0" value="0"><em>px</em></div></div>
                   <div class="r"><label>Line join</label>
                     <div class="seg grow" id="strokeJoinSeg"><button data-v="miter" class="active">Sharp</button><button data-v="round">Round</button><button data-v="bevel">Bevel</button></div>
                   </div>
@@ -186,15 +186,15 @@
                 <div class="sect-h"><i data-i="chevd" class="car"></i>Warp shape</div>
                 <div class="sect-b">
                   <div class="chips" id="swPresets"></div>
-                  <div class="r"><label>Arch</label><input type="range" id="swArch" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Side bend</label><input type="range" id="swSide" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Wave</label><input type="range" id="swWave" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Wave count</label><input type="range" id="swWaveN" min="0.5" max="6" step="0.5" value="1.5"></div>
-                  <div class="r"><label>Bulge</label><input type="range" id="swBulge" min="-80" max="150" value="0"></div>
+                  <div class="r"><label>Arch</label><input type="range" id="swArch" min="-200" max="200" value="0"></div>
+                  <div class="r"><label>Side bend</label><input type="range" id="swSide" min="-200" max="200" value="0"></div>
+                  <div class="r"><label>Wave</label><input type="range" id="swWave" min="-200" max="200" value="0"></div>
+                  <div class="r"><label>Wave count</label><input type="range" id="swWaveN" min="0.5" max="12" step="0.5" value="1.5"></div>
+                  <div class="r"><label>Bulge</label><input type="range" id="swBulge" min="-80" max="300" value="0"></div>
                   <div class="r"><label>Taper</label><input type="range" id="swTaper" min="-90" max="90" value="0"></div>
-                  <div class="r"><label>Twist</label><input type="range" id="swTwist" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Skew</label><input type="range" id="swSkewX" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Slope</label><input type="range" id="swSkewY" min="-100" max="100" value="0"></div>
+                  <div class="r"><label>Twist</label><input type="range" id="swTwist" min="-300" max="300" value="0"></div>
+                  <div class="r"><label>Skew</label><input type="range" id="swSkewX" min="-200" max="200" value="0"></div>
+                  <div class="r"><label>Slope</label><input type="range" id="swSkewY" min="-200" max="200" value="0"></div>
                   <div class="r"><button class="btn sm" id="swReset">Reset warp</button><span class="hint">Works on squares, circles, triangles, polygons and stars.</span></div>
                 </div>
               </div>
@@ -229,20 +229,20 @@
                       <button class="tb" id="caseTitle" data-tip="Title Case">Aa</button>
                     </div>
                   </div>
-                  <div class="r"><label>Line spacing</label><input type="range" id="propLineHeightR" min="0.3" max="3" step="0.01" value="1.16"><div class="f" style="width:62px"><input type="number" id="propLineHeight" min="0.1" max="10" step="0.05" value="1.16"></div></div>
-                  <div class="r"><label>Letter spacing</label><input type="range" id="propCharSpacingR" min="-200" max="1500" step="10" value="0"><div class="f" style="width:62px"><input type="number" id="propCharSpacing" min="-500" max="5000" step="10" value="0"></div></div>
+                  <div class="r"><label>Line spacing</label><input type="range" id="propLineHeightR" min="0.3" max="6" step="0.01" value="1.16"><div class="f" style="width:62px"><input type="number" id="propLineHeight" min="0.1" max="10" step="0.05" value="1.16"></div></div>
+                  <div class="r"><label>Letter spacing</label><input type="range" id="propCharSpacingR" min="-200" max="3000" step="10" value="0"><div class="f" style="width:62px"><input type="number" id="propCharSpacing" min="-500" max="5000" step="10" value="0"></div></div>
                   <div class="r"><label>Curve</label><input type="range" id="propCurve" min="-100" max="100" value="0"><div class="f" style="width:62px"><input type="number" id="propCurveNum" min="-100" max="100" value="0"></div></div>
                   <div class="hr"></div>
                   <div class="hint" style="font-weight:700;letter-spacing:.4px;text-transform:uppercase">Text layout</div>
                   <div class="chips" id="tlPresets"></div>
-                  <div class="r"><label>Step</label><input type="range" id="tlStep" min="-60" max="60" value="0"></div>
-                  <div class="r"><label>Wave</label><input type="range" id="tlWave" min="0" max="80" value="0"></div>
-                  <div class="r"><label>Wave count</label><input type="range" id="tlWaveN" min="0.5" max="6" step="0.5" value="1.5"></div>
-                  <div class="r"><label>Bulge</label><input type="range" id="tlBulge" min="-80" max="150" value="0"></div>
-                  <div class="r"><label>Rotate each</label><input type="range" id="tlTilt" min="-45" max="45" value="0"></div>
-                  <div class="r"><label>Spin along</label><input type="range" id="tlSpin" min="-30" max="30" value="0"></div>
-                  <div class="r"><label>Skew</label><input type="range" id="tlSkewX" min="-60" max="60" value="0"></div>
-                  <div class="r"><label>Slope</label><input type="range" id="tlSkewY" min="-45" max="45" value="0"></div>
+                  <div class="r"><label>Step</label><input type="range" id="tlStep" min="-150" max="150" value="0"></div>
+                  <div class="r"><label>Wave</label><input type="range" id="tlWave" min="0" max="200" value="0"></div>
+                  <div class="r"><label>Wave count</label><input type="range" id="tlWaveN" min="0.5" max="12" step="0.5" value="1.5"></div>
+                  <div class="r"><label>Bulge</label><input type="range" id="tlBulge" min="-80" max="300" value="0"></div>
+                  <div class="r"><label>Rotate each</label><input type="range" id="tlTilt" min="-180" max="180" value="0"></div>
+                  <div class="r"><label>Spin along</label><input type="range" id="tlSpin" min="-90" max="90" value="0"></div>
+                  <div class="r"><label>Skew</label><input type="range" id="tlSkewX" min="-85" max="85" value="0"></div>
+                  <div class="r"><label>Slope</label><input type="range" id="tlSkewY" min="-85" max="85" value="0"></div>
                   <div class="r"><button class="btn sm" id="tlReset">Reset layout</button><span class="hint">Curve is the slider above. Each letter becomes its own piece (still editable as one text).</span></div>
                   <div class="tb-row fill">
                     <button class="btn sm" id="btnGraffitiStyle" data-tip="One click: graffiti font + thick outline + shadow. Click again to cycle 20 looks.">🎨 Graffiti style</button>
@@ -261,9 +261,9 @@
                   <div class="r"><label>Contrast</label><input type="range" id="fxContrast" min="-100" max="100" value="0"></div>
                   <div class="r"><label>Saturate</label><input type="range" id="fxSat" min="-100" max="100" value="0"></div>
                   <div class="r"><label>Hue</label><input type="range" id="fxHue" min="-100" max="100" value="0"></div>
-                  <div class="r"><label>Blur</label><input type="range" id="fxBlur" min="0" max="100" value="0"></div>
-                  <div class="r"><label>Pixelate</label><input type="range" id="fxPixel" min="1" max="40" value="1"></div>
-                  <div class="r"><label>Noise</label><input type="range" id="fxNoise" min="0" max="400" value="0"></div>
+                  <div class="r"><label>Blur</label><input type="range" id="fxBlur" min="0" max="300" value="0"></div>
+                  <div class="r"><label>Pixelate</label><input type="range" id="fxPixel" min="1" max="100" value="1"></div>
+                  <div class="r"><label>Noise</label><input type="range" id="fxNoise" min="0" max="800" value="0"></div>
                   <div class="tb-row fill">
                     <button class="btn sm" id="btnImgWand"><i data-i="wand"></i>Remove background</button>
                     <button class="btn sm" id="btnImgEraser"><i data-i="eraser"></i>Erase</button>
