@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.15 beta';
+window.IMAGINATION_VERSION = '4.16 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -2465,11 +2465,11 @@ function arrowPoints(len, thick, headL, headW){
   const t = thick / 2, hw = headW / 2, bodyEnd = len - headL;
   return [{x:0,y:-t},{x:bodyEnd,y:-t},{x:bodyEnd,y:-hw},{x:len,y:0},{x:bodyEnd,y:hw},{x:bodyEnd,y:t},{x:0,y:t}];
 }
-const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
+const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, outlineW:MS.store.get('outlineW', 6), style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
 
 function makeShape(kind, x0, y0, w, h, p0, p1){
   const outlineOnly = SHAPE_OPT.style === 'line' && kind !== 'line' && kind !== 'arrow', lineCol = S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke;
-  const common = outlineOnly ? { fill:'', stroke:lineCol, strokeWidth:Math.max(S.noStroke ? 0 : S.strokeW, SHAPE_OPT.lineW), strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' }
+  const common = outlineOnly ? { fill:'', stroke:lineCol, strokeWidth:Math.max(.5, SHAPE_OPT.outlineW), strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' }
     : { fill: fillValue(), stroke: strokeValue(), strokeWidth: S.noStroke ? 0 : S.strokeW, strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' };
   let o = null;
   w = Math.max(w, 1); h = Math.max(h, 1);
@@ -2952,9 +2952,10 @@ function styleHover(b){
   const open = ()=>{
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
     const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
-    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>');
+    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><div class="f" style="width:78px"><input type="number" id="ssW" min="0.5" step="1" value="${SHAPE_OPT.outlineW}"><em>px</em></div></div>`;
     document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
     pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
+    pop.addEventListener('input', e=>{ if(e.target.id === 'ssW'){ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } } });
     pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return; SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(b.dataset.tool); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines.' : 'Shapes are drawn solid.', 1800); });
     setTimeout(()=> document.addEventListener('mousedown', away, true), 0);
   };
@@ -3009,6 +3010,7 @@ T.renderOptions = function(){
   if(shapeLike){
     if(kind === 'rect' || kind === 'rrect') h += radiusHtml();
     h += fillStroke();
+    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><div class="f" style="width:72px"><input type="number" id="obOutW" min="0.5" step="1" value="${SHAPE_OPT.outlineW}" style="padding-left:8px"></div></div>`;
     if(kind === 'polygon') h += `<div class="og"><label>Sides</label><div class="f" style="width:64px"><input type="number" id="obSides" min="3" max="24" value="${SHAPE_OPT.sides}" style="padding-left:8px"></div></div>`;
     if(kind === 'star') h += `<div class="og"><label>Points</label><div class="f" style="width:64px"><input type="number" id="obPoints" min="3" max="24" value="${SHAPE_OPT.points}" style="padding-left:8px"></div><label>Inner</label><input type="range" id="obInner" min="10" max="90" value="${Math.round(SHAPE_OPT.inner*100)}" style="width:90px"></div>`;
     if(kind === 'line' || kind === 'arrow') h += `<div class="og"><label>Thickness</label><input type="range" id="obLineW" min="1" max="80" value="${SHAPE_OPT.lineW}" style="width:110px"></div>`;
@@ -3080,6 +3082,8 @@ function bindOptions(bar){
   on('obPoints', 'input', e=>{ SHAPE_OPT.points = clamp(+e.target.value || 5, 3, 24); });
   on('obInner', 'input', e=>{ SHAPE_OPT.inner = clamp(+e.target.value, 10, 90) / 100; });
   on('obLineW', 'input', e=>{ SHAPE_OPT.lineW = +e.target.value; });
+  on('obOutW', 'input', e=>{ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } });
+  on('obStyle', 'click', e=>{ const b = e.target.closest('button'); if(!b) return; SHAPE_OPT.style = b.dataset.v; MS.store.set('shapeStyle', b.dataset.v); T.renderOptions(); });
   on('obMoreShapes', 'click', e=>{ const r = e.currentTarget.getBoundingClientRect(); shapeLibrary(r.left, r.bottom + 4); });
   on('obBrushColor', 'input', e=>{ brush.color = e.target.value; if(cv().freeDrawingBrush) cv().freeDrawingBrush.color = e.target.value; });
   on('obBrushSize', 'input', e=>{ brush.size = +e.target.value; $('#obBrushV').textContent = e.target.value + 'px'; if(cv().freeDrawingBrush) cv().freeDrawingBrush.width = brush.size; });
