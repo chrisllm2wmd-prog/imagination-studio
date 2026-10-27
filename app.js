@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '3.97 beta';
+window.IMAGINATION_VERSION = '4.03 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -854,9 +854,17 @@ function wireInputs(){
     const up = ()=>{ clearTimeout(hold); clearInterval(rep); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up); inp.dispatchEvent(new Event('change', { bubbles:true })); };
     document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
   });
+  // dragging a slider that runs through 0 snaps to 0 when you come close (hold Alt to place it freely; arrow keys are never snapped)
+  let dragging = null;
+  document.addEventListener('pointerdown', e=>{ dragging = e.target && e.target.type === 'range' ? { alt:e.altKey } : null; }, true);
+  document.addEventListener('pointerup', ()=>{ dragging = null; }, true);
   document.addEventListener('input', e=>{
     const r = e.target;
-    if(r.type === 'range') fillRange(r);
+    if(r.type === 'range'){
+      const min = +r.min, max = +r.max;
+      if(dragging && !dragging.alt && min < 0 && max > 0 && Math.abs(+r.value) <= (max - min) * .035) r.value = 0;
+      fillRange(r);
+    }
   }, true);
   document.addEventListener('keydown', e=>{
     const t = e.target;
@@ -873,8 +881,19 @@ function wireInputs(){
 function fillRange(r){
   const min = +r.min || 0, max = +r.max || 100, v = +r.value;
   r.style.setProperty('--p', ((v - min) / (max - min) * 100) + '%');
+  // a slider that starts in the middle (range crosses 0) gets a 0 tick and a fill that runs from 0 to the thumb
+  const bi = min < 0 && max > 0;
+  if(bi){ r.style.setProperty('--z', (-min / (max - min) * 100) + '%'); r.style.setProperty('--zf', String(-min / (max - min))); }
+  r.classList.toggle('bi', bi); if(bi && !r.title) r.title = 'Double-click to reset to 0';
 }
 MS.fillRange = fillRange;
+// sliders added later (panels build themselves on demand) get the 0 mark too; double-click a two-sided slider to put it back to 0
+(function(){
+  let t = 0; const scan = ()=> document.querySelectorAll('input[type=range]:not(.bi)').forEach(r=>{ if(+r.min < 0 && +r.max > 0) fillRange(r); });
+  new MutationObserver(()=>{ clearTimeout(t); t = setTimeout(scan, 80); }).observe(document.documentElement, { childList:true, subtree:true });
+  document.addEventListener('dblclick', e=>{ const r = e.target; if(r.type !== 'range' || !(+r.min < 0 && +r.max > 0) || r.disabled) return; r.value = 0; fillRange(r); r.dispatchEvent(new Event('input', { bubbles:true })); r.dispatchEvent(new Event('change', { bubbles:true })); });
+  setTimeout(scan, 0);
+})();
 MS.syncRanges = root=> $$('input[type=range]', root).forEach(fillRange);
 
 /* ---------- command palette ---------- */
@@ -3325,12 +3344,13 @@ TX.layout = function(part, replace){
   if(!layoutOn(L) && !obj._isCurvedText) return;
   const base = obj._isCurvedText ? obj._curveSourceText : (obj.text || '');
   const style = obj._isCurvedText ? obj._curveStyle : { fontFamily:obj.fontFamily, fontSize:obj.fontSize, fill:obj.fill, fontWeight:obj.fontWeight, fontStyle:obj.fontStyle, charSpacing:obj.charSpacing || 0, lineHeight:obj.lineHeight || 1.16, stroke:obj.stroke, strokeWidth:obj.strokeWidth, shadow:obj.shadow, paintFirst:obj.paintFirst, underline:obj.underline, linethrough:obj.linethrough };
+  const keep = { scaleX:obj.scaleX, scaleY:obj.scaleY, flipX:obj.flipX, flipY:obj.flipY, skewX:obj.skewX || 0, skewY:obj.skewY || 0 };   // the size the user set must survive a rebuild
   const center = obj.getCenterPoint(), name = obj.name, angle = obj.angle, op = obj.opacity, idx = c.getObjects().indexOf(obj), fade = fadeOf(obj);
   if(fade && !obj._isCurvedText) style.fill = fade.stops[0].color;
   c.remove(obj);
   let n;
-  if(!layoutOn(L)){ n = new fabric.IText(base, Object.assign({ left:center.x, top:center.y, originX:'center', originY:'center', angle, textAlign:'center', strokeUniform:true }, style)); straightFade(n, fade); }
-  else { n = buildCurved(base, style, L); n.set({ left:center.x, top:center.y, originX:'center', originY:'center', angle }); n.setCoords(); refade(n, fade); }
+  if(!layoutOn(L)){ n = new fabric.IText(base, Object.assign({ left:center.x, top:center.y, originX:'center', originY:'center', angle, textAlign:'center', strokeUniform:true }, style, keep)); straightFade(n, fade); }
+  else { n = buildCurved(base, style, L); n.set(Object.assign({ left:center.x, top:center.y, originX:'center', originY:'center', angle }, keep)); n.setCoords(); refade(n, fade); }
   n.name = name || MS.nextName('text'); n.set('opacity', op); n.shadow = obj.shadow; n.__fx = obj.__fx; if(obj.__fx && obj.__fx.distress){ n.objectCaching = true; n.noScaleCache = false; }
   c.add(n); c.moveTo(n, idx); c.setActiveObject(n); c.requestRenderAll();
   clearTimeout(TX._lt); TX._lt = setTimeout(()=> MS.commit('Text layout'), 350); MS.emitSelection();
@@ -3401,7 +3421,7 @@ function buildCurved(baseText, style, layout){
 }
 TX.rebuildCurve = function(o){
   const c = cv(), n = buildCurved(o._curveSourceText, o._curveStyle, o._layout || o._curveAmount);
-  const center = o.getCenterPoint(); n.set({ left:center.x, top:center.y, originX:'center', originY:'center', angle:o.angle, opacity:o.opacity, shadow:o.shadow, name:o.name });
+  const center = o.getCenterPoint(); n.set({ left:center.x, top:center.y, originX:'center', originY:'center', angle:o.angle, opacity:o.opacity, shadow:o.shadow, name:o.name, scaleX:o.scaleX, scaleY:o.scaleY, flipX:o.flipX, flipY:o.flipY, skewX:o.skewX || 0, skewY:o.skewY || 0 });
   n.shadow = o.shadow; n.__fx = o.__fx; if(o.__fx && o.__fx.distress){ n.objectCaching = true; n.noScaleCache = false; }
   n.setCoords(); refade(n, fadeOf(o));
   const idx = c.getObjects().indexOf(o); c.remove(o); c.add(n); c.moveTo(n, idx); c.setActiveObject(n);
@@ -4690,6 +4710,41 @@ function render(keepScroll){
   const act = $('#fbList .fb-item.active'); if(act && !keepScroll && !q && cat === 'All') act.scrollIntoView({ block:'center' });
 }
 MS.on('font', ()=>{ if(el) render(true); });
+
+/* Text must never be drawn (or measured) with a stand-in font and then change when the real one arrives - that is the "pop" you see when an
+   effect is added and the cached bitmap is rebuilt. So: a text layer whose font is still loading is simply not drawn yet; the moment the font
+   is in, the layer is measured once with the real font (its position, font size and scale are never touched) and drawn. */
+const ready = new Set(), asked = new Map(); let fixT = 0;
+const qOf = o=> `${(o.fontWeight === 'bold' || +o.fontWeight >= 600) ? 'bold ' : ''}${o.fontStyle === 'italic' ? 'italic ' : ''}48px "${o.fontFamily}"`;
+function pending(o){
+  const f = o.fontFamily; if(!f || !document.fonts || !document.fonts.check) return false;
+  const q = qOf(o); if(ready.has(q)) return false;
+  let ok = true; try{ ok = document.fonts.check(q); }catch(e){}
+  if(ok){ ready.add(q); return false; }
+  if(!asked.has(q)){ asked.set(q, Date.now()); document.fonts.load(q).catch(()=>{}).then(()=>{ clearTimeout(fixT); fixT = setTimeout(remeasure, 20); }); }
+  return Date.now() - asked.get(q) < 5000;       // never hide text for more than 5 s, whatever happens
+}
+function remeasure(){
+  const c = MS.canvas; if(!c) return; let any = false;
+  const walk = o=>{
+    if(o._objects && !/text/.test(o.type || '')) o._objects.forEach(walk);
+    if(!/text/.test(o.type || '') || !o.fontFamily || o._isCurvedText || !asked.has(qOf(o)) || pending(o)) return;
+    asked.delete(qOf(o)); delete fabric.charWidthsCache[String(o.fontFamily).toLowerCase()];
+    if(o.initDimensions){ o.initDimensions(); o.setCoords(); } o.dirty = true; any = true;
+  };
+  c.getObjects().forEach(walk);
+  if(any){ c.requestRenderAll(); MS.dirtyObj && c.getObjects().forEach(MS.dirtyObj); MS.emit && MS.emit('selection'); }
+}
+(function(){
+  const own = Object.prototype.hasOwnProperty.call(fabric.Text.prototype, 'render') ? fabric.Text.prototype.render : null;   // (never capture Object's: effects.js wraps it later)
+  fabric.Text.prototype.render = function(ctx){ if(pending(this)) return; (own || fabric.Object.prototype.render).call(this, ctx); };
+  // measuring with a stand-in font would store the wrong size: ask for the font as soon as the layer exists
+  const init = fabric.Text.prototype.initDimensions;
+  fabric.Text.prototype.initDimensions = function(){ if(this.fontFamily && !this._isCurvedText) pending(this); return init.apply(this, arguments); };
+})();
+const kick = ()=>{ const c = MS.canvas; if(!c) return; c.getObjects().forEach(function w(o){ if(o._objects) o._objects.forEach(w); if(/text/.test(o.type || '') && o.fontFamily) pending(o); }); };
+['layers', 'history', 'selection'].forEach(e=> MS.on(e, ()=>{ clearTimeout(kick._t); kick._t = setTimeout(kick, 40); }));
+if(document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', ()=>{ clearTimeout(fixT); fixT = setTimeout(remeasure, 20); });
 })();
 
 
@@ -4985,13 +5040,43 @@ function objSize(o){ const b = o.getBoundingRect(true, true); return Math.max(b.
 const mx = (v, b)=> typeof v === 'function' ? v(b) : v;
 const FXDEF = {
   shadow:{ label:'Drop shadow', icon:'drop', def:b=>({ on:true, color:'#000000', alpha:70, blur:Math.round(b * .05), depth:Math.round(b * .04), angle:45 }),
-    ctl:[['color', 'Colour'], ['alpha', 'Opacity', 0, 100, 1, '%'], ['blur', 'Blur', 0, b=> Math.max(120, b * .4), 1, 'px'], ['depth', 'Distance', 0, b=> Math.max(150, b * .3), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°']] },
+    ctl:[['color', 'Colour'], ['alpha', 'Opacity', 0, 100, 1, '%'], ['blur', 'Blur', 0, b=> Math.max(400, b * 1.2), 1, 'px'], ['depth', 'Distance', 0, b=> Math.max(500, b * 1), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°']] },
   glow:{ label:'Outer glow', icon:'sun', def:b=>({ on:true, color:'#ffd24a', size:Math.max(8, Math.round(b * .08)), bright:100 }),
-    ctl:[['color', 'Colour'], ['size', 'Size', 1, b=> Math.max(300, b * 1.5), 1, 'px'], ['bright', 'Brightness', 0, 300, 1, '%']] },
+    ctl:[['color', 'Colour'], ['size', 'Size', 1, b=> Math.max(900, b * 4), 1, 'px'], ['bright', 'Brightness', 0, 800, 1, '%']] },
   outline:{ label:'Outline', icon:'stroke', def:b=>({ on:true, color:'#000000', width:Math.max(3, Math.round(b * .015)) }),
-    ctl:[['color', 'Colour'], ['width', 'Width', 1, b=> Math.max(40, b * .2), 1, 'px']] },
+    ctl:[['color', 'Colour'], ['width', 'Width', 1, b=> Math.max(150, b * .6), 1, 'px']] },
 };
-const KINDS = ['shadow', 'glow', 'outline'];
+// v3.98 - more text / shape effects. They paint underneath the element, like the three above.
+Object.assign(FXDEF, {
+  extrude:{ label:'3D extrude', icon:'stroke', def:b=>({ on:true, color:'#8a2a1c', depth:Math.max(4, Math.round(b * .06)), angle:45 }),
+    ctl:[['color', 'Colour'], ['depth', 'Depth', 1, b=> Math.max(400, b * 1.2), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°']] },
+  longshadow:{ label:'Long shadow', icon:'drop', def:b=>({ on:true, color:'#000000', length:Math.max(10, Math.round(b * .5)), angle:45, fade:70 }),
+    ctl:[['color', 'Colour'], ['length', 'Length', 1, b=> Math.max(1500, b * 3), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°'], ['fade', 'Fade out', 0, 100, 1, '%']] },
+  echo:{ label:'Echo trail', icon:'stroke', def:b=>({ on:true, copies:5, dist:Math.max(4, Math.round(b * .05)), angle:200, fade:40 }),
+    ctl:[['copies', 'Copies', 1, 30, 1, ''], ['dist', 'Spacing', 1, b=> Math.max(500, b * 1), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°'], ['fade', 'Fade', 0, 100, 1, '%']] },
+  neon:{ label:'Neon tube', icon:'sun', def:b=>({ on:true, color:'#19f0ff', size:Math.max(10, Math.round(b * .12)), width:Math.max(2, Math.round(b * .012)) }),
+    ctl:[['color', 'Colour'], ['size', 'Glow size', 1, b=> Math.max(900, b * 4), 1, 'px'], ['width', 'Tube width', 0, b=> Math.max(120, b * .3), 1, 'px']] },
+  split:{ label:'RGB split', icon:'stroke', def:b=>({ on:true, color:'#00e5ff', color2:'#ff2a6d', offset:Math.max(2, Math.round(b * .025)), angle:0, alpha:85 }),
+    ctl:[['color', 'Colour A'], ['color2', 'Colour B'], ['offset', 'Offset', 0, b=> Math.max(300, b * .6), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°'], ['alpha', 'Opacity', 0, 100, 1, '%']] },
+  ring2:{ label:'Double outline', icon:'stroke', def:b=>({ on:true, color:'#ffffff', color2:'#000000', gap:Math.max(2, Math.round(b * .012)), width:Math.max(3, Math.round(b * .02)) }),
+    ctl:[['color', 'Outer colour'], ['color2', 'Inner colour'], ['gap', 'Inner width', 1, b=> Math.max(120, b * .3), 1, 'px'], ['width', 'Outer width', 1, b=> Math.max(200, b * .45), 1, 'px']] },
+});
+const KINDS = ['shadow', 'glow', 'outline', 'extrude', 'longshadow', 'echo', 'neon', 'split', 'ring2'];
+// one-click looks: each switches every other effect off and sets the listed ones (b = the element's size)
+const LOOKS = {
+  'Sticker':{ outline:b=>({ color:'#ffffff', width:Math.round(b * .035) }), shadow:b=>({ color:'#000000', alpha:55, blur:Math.round(b * .03), depth:Math.round(b * .02), angle:60 }) },
+  'Neon sign':{ neon:b=>({ color:'#19f0ff', size:Math.round(b * .14), width:Math.round(b * .012) }) },
+  'Hot pink neon':{ neon:b=>({ color:'#ff2fb3', size:Math.round(b * .14), width:Math.round(b * .012) }) },
+  'Retro 3D':{ extrude:b=>({ color:'#b8321e', depth:Math.round(b * .05), angle:45 }), outline:b=>({ color:'#2a0d08', width:Math.round(b * .01) }) },
+  'Comic pop':{ ring2:b=>({ color:'#ffffff', color2:'#000000', gap:Math.round(b * .014), width:Math.round(b * .022) }), shadow:b=>({ color:'#000000', alpha:100, blur:0, depth:Math.round(b * .035), angle:45 }) },
+  'Glitch':{ split:b=>({ color:'#00e5ff', color2:'#ff2a6d', offset:Math.round(b * .03), angle:0, alpha:85 }) },
+  'Flat long shadow':{ longshadow:b=>({ color:'#1a1a1a', length:Math.round(b * .6), angle:45, fade:75 }) },
+  'Speed trail':{ echo:b=>({ copies:6, dist:Math.round(b * .05), angle:180, fade:35 }) },
+  'Gold glow':{ glow:b=>({ color:'#ffd24a', size:Math.round(b * .1), bright:140 }), outline:b=>({ color:'#6b4200', width:Math.round(b * .012) }) },
+  'Fire glow':{ glow:b=>({ color:'#ff5a00', size:Math.round(b * .14), bright:160 }), shadow:b=>({ color:'#ffcc00', alpha:60, blur:Math.round(b * .05), depth:0, angle:0 }) },
+  'Ice':{ glow:b=>({ color:'#8be9ff', size:Math.round(b * .1), bright:130 }), outline:b=>({ color:'#ffffff', width:Math.round(b * .01) }) },
+  'Stacked 3D + shadow':{ extrude:b=>({ color:'#222a44', depth:Math.round(b * .07), angle:60 }), shadow:b=>({ color:'#000000', alpha:50, blur:Math.round(b * .06), depth:Math.round(b * .09), angle:60 }) },
+};
 const stackOf = o=> (o && o.__fx && o.__fx.stack) || null;
 const anyOn = o=> { const s = stackOf(o); return !!s && KINDS.some(k=> s[k] && s[k].on); };
 function ensureStack(o){ o.__fx = Object.assign({}, o.__fx); o.__fx.stack = Object.assign({}, o.__fx.stack); return o.__fx.stack; }
@@ -5037,10 +5122,38 @@ function underlay(o, ctx){
     if(ol) withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   } finally { o.__fxPass = false; ctx.restore(); }
 }
+// draws fn() with the element moved by (dx, dy) canvas px and its opacity scaled by alpha
+function atOffset(o, ctx, dx, dy, alpha, fn){
+  ctx.save(); ctx.translate(dx, dy); o.transform(ctx); o._setOpacity(ctx); ctx.globalAlpha *= alpha;
+  try{ fn(); } finally { ctx.restore(); }
+}
+function underlayExtra(o, ctx){
+  const st = stackOf(o); if(!st) return;
+  const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
+  const solid = (col, sw)=> ()=> withProps(o, { fill:col, stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+  const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
+  o.__fxPass = true;
+  try{
+    let e;
+    if((e = on('longshadow')) && !img){ const n = Math.min(80, Math.max(1, Math.ceil(e.length))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
+      for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.length * i / n, cy * e.length * i / n, 1 - f * i / n, solid(e.color)); }
+    if((e = on('extrude')) && !img){ const n = Math.min(60, Math.max(1, Math.ceil(e.depth))), [cx, cy] = dir(e.angle);
+      for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.depth * i / n, cy * e.depth * i / n, 1, solid(e.color)); }
+    if((e = on('echo'))){ const n = Math.min(30, Math.max(1, Math.round(e.copies))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
+      for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.dist * i, cy * e.dist * i, .7 * Math.pow(1 - i / (n + 1), 1 + f * 2), plain); }
+    if((e = on('split')) && !img){ const [cx, cy] = dir(e.angle), al = clamp(e.alpha, 0, 100) / 100;
+      atOffset(o, ctx, -cx * e.offset, -cy * e.offset, al, solid(e.color)); atOffset(o, ctx, cx * e.offset, cy * e.offset, al, solid(e.color2)); }
+    if((e = on('ring2')) && !img){ atOffset(o, ctx, 0, 0, 1, solid(e.color, e.gap + e.width)); atOffset(o, ctx, 0, 0, 1, solid(e.color2, e.gap)); }
+    if((e = on('neon')) && !img){
+      ctx.save(); o.transform(ctx); o._setOpacity(ctx);
+      try{ [[.1, 1], [.3, .9], [.65, .75], [1, .55]].forEach(([f, w])=> shadowOnly(o, ctx, rgba(e.color, w), Math.max(1, e.size * f), 0, 0, solid(e.color, e.width))); solid(e.color, e.width)(); } finally { ctx.restore(); }
+    }
+  } finally { o.__fxPass = false; }
+}
 (function(){
   const origRender = fabric.Object.prototype.render;
   fabric.Object.prototype.render = function(ctx){
-    if(!this.__fxPass && this.__fx && this.__fx.stack && anyOn(this) && !this.isNotVisible()){ try{ underlay(this, ctx); }catch(e){ console.error(e); } }
+    if(!this.__fxPass && this.__fx && this.__fx.stack && anyOn(this) && !this.isNotVisible()){ try{ underlayExtra(this, ctx); underlay(this, ctx); }catch(e){ console.error(e); } }
     origRender.call(this, ctx);
   };
 })();
@@ -5067,7 +5180,7 @@ function setParam(k, p, v){
 }
 function block(k){
   const d = FXDEF[k];
-  return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> p === 'color'
+  return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> /^color/.test(p)
     ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span></div>`
     : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + `</div></div>`;
 }
@@ -5080,7 +5193,7 @@ function refresh(root){
     const b = root.querySelector(`.fxb[data-fx="${k}"]`), p = Object.assign(FXDEF[k].def(base), st[k] || {}), on = !!(st[k] && st[k].on);
     b.querySelector('[data-on]').checked = on; b.querySelector('.fxbody').style.display = on ? '' : 'none';
     FXDEF[k].ctl.forEach(([name, , lo, hi])=>{
-      if(name === 'color'){ const e = b.querySelector('[data-p="color"]'); if(document.activeElement !== e) e.value = p.color; return; }
+      if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); if(document.activeElement !== e) e.value = p[name]; return; }
       const r = b.querySelector(`[data-p="${name}"]`), n = b.querySelector(`[data-n="${name}"]`); r.max = Math.max(mx(hi, base), +p[name]);
       if(document.activeElement !== r) r.value = p[name]; if(document.activeElement !== n) n.value = Math.round(p[name]); MS.fillRange(r);
     });
@@ -5089,9 +5202,13 @@ function refresh(root){
 MS.fx = MS.fx || {};
 MS.fx.build = function(root){
   root.classList.add('fxstack');
-  root.innerHTML = `<label class="chk fxuni" style="display:none"><input type="checkbox" class="fxUnify" checked> One effect around the whole selection</label>` + KINDS.map(block).join('') + `<div class="r"><button class="btn sm fxClear">Clear all effects</button><span class="hint">Shadow, glow and outline can all be on together.</span></div>`;
+  root.innerHTML = `<label class="chk fxuni" style="display:none"><input type="checkbox" class="fxUnify" checked> One effect around the whole selection</label>` + `<div class="r"><label>Looks</label><select class="fxLook grow"><option value="">Pick a one-click look…</option>` + Object.keys(LOOKS).map(n=> `<option>${n}</option>`).join('') + `</select></div>` + KINDS.map(block).join('') + `<div class="r"><button class="btn sm fxClear">Clear all effects</button><span class="hint">Shadow, glow and outline can all be on together.</span></div>`;
   window.MSI.hydrate && window.MSI.hydrate(root);
-  root.addEventListener('change', e=>{ const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(e.target.dataset.p === 'color') MS.noteColor && MS.noteColor(e.target.value); });
+  root.addEventListener('change', e=>{
+    if(e.target.matches('.fxLook')){ const L = LOOKS[e.target.value]; e.target.value = ''; if(!L) return; unifyIfAsked(root);
+      eachTarget(o=>{ migrate(o); const st = ensureStack(o), b = objSize(o); KINDS.forEach(k=>{ if(st[k]) st[k] = Object.assign({}, st[k], { on:false }); }); Object.keys(L).forEach(k=>{ st[k] = Object.assign(FXDEF[k].def(b), L[k](b), { on:true }); }); });
+      commit('Look', true); return; }
+    const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(/^color/.test(e.target.dataset.p || '')) MS.noteColor && MS.noteColor(e.target.value); });
   root.addEventListener('input', e=>{
     const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]')) return;
     const p = t.dataset.p || t.dataset.n, v = t.type === 'color' ? t.value : +t.value; if(t.type !== 'color' && !isFinite(v)) return;
@@ -5137,7 +5254,7 @@ function wire(){
 Object.assign(MS.fx, {
   quick(kind){
     if(!cv().getActiveObject()){ MS.toast('Select something first.'); return; }
-    if(kind === 'shadow' || kind === 'glow' || kind === 'outline') MS.fx.enable(kind);
+    if(FXDEF[kind]) MS.fx.enable(kind);
     else if(kind === 'distress'){ $('#fxDistressKind').value = 'grunge'; $('#fxDistressKind').dispatchEvent(new Event('change')); }
     else if(kind === 'clear'){ eachTarget(o=>{ o.shadow = null; o.paintFirst = 'fill'; if(o.__fx) o.__fx = {}; o.objectCaching = !MS.isTextObj(o); }); MS.commit('Clear effects'); MS.emitSelection(); }
     MS.showPage('design');
@@ -7135,7 +7252,7 @@ function scan(target){
     if(o.visible === false) return;
     if(o.__fx && o.__fx.distress) list.distress.push(t);
     if(o.globalCompositeOperation && o.globalCompositeOperation !== 'source-over') list.blend.push(t);
-    if(o.shadow || (o.__fx && o.__fx.stack && ['shadow','glow'].some(k=> o.__fx.stack[k] && o.__fx.stack[k].on))) list.shadow.push(t);
+    if(o.shadow || (o.__fx && o.__fx.stack && ['shadow','glow','extrude','longshadow','echo','neon','split','ring2'].some(k=> o.__fx.stack[k] && o.__fx.stack[k].on))) list.shadow.push(t);
     if(o.type === 'image'){ list.image.push(t); if(o.filters && o.filters.length) list.filters.push(t);
       if(d.mode === 'print'){ const inches = o.getScaledWidth() / MS.WORKING_PPI; if(inches > 0 && o.width / inches < 150) list.lowres.push(t); } }
     if(txt(o) && o.type !== 'group'){ if(!o.__outlined && !o._isCurvedText) list.liveText.push(t); if(sysFont(o.fontFamily)) list.sysText.push(t); const pt = (o.fontSize * Math.abs(o.scaleX || 1) * (t._isCurvedText ? Math.abs(t.scaleX || 1) : 1)) / MS.WORKING_PPI * 72; if(d.mode === 'print' && pt < 6) list.tiny.push(t); }
@@ -7160,7 +7277,7 @@ function scan(target){
     add('live', game ? 'warn' : 'info', '{n} text layer(s) are live text, not outlines', list.liveText, { label:'Convert to outlines', run:async ()=>{ MS.ops.select(list.liveText); await MS.textToPaths(); } });
     if(nodes > 4000) issues.push({ id:'nodes', level:'warn', text:'Very detailed paths (' + nodes + ' segments) - some editors limit complexity', objs:[] });
     if(game){
-      add('shadow', 'warn', '{n} layer(s) have shadows or glows (ignored by most decal editors)', list.shadow, { label:'Remove', run:()=>{ list.shadow.forEach(o=>{ o.shadow = null; if(o.__fx){ delete o.__fx.glow; if(o.__fx.stack){ o.__fx.stack = Object.assign({}, o.__fx.stack, { shadow:null, glow:null }); } } }); MS.commit('Remove shadows'); } });
+      add('shadow', 'warn', '{n} layer(s) have shadows, glows or text effects (ignored by most decal editors)', list.shadow, { label:'Remove', run:()=>{ list.shadow.forEach(o=>{ o.shadow = null; if(o.__fx){ delete o.__fx.glow; if(o.__fx.stack){ o.__fx.stack = Object.assign({}, o.__fx.stack, { shadow:null, glow:null, extrude:null, longshadow:null, echo:null, neon:null, split:null, ring2:null }); } } }); MS.commit('Remove shadows'); } });
       add('alpha', 'warn', '{n} gradient(s) fade to transparent (often unsupported)', list.alphaGrad);
       add('clip', 'warn', '{n} layer(s) are clipped (cut by a mask)', list.clip);
       add('dash', 'info', '{n} dashed line(s) may import as solid', list.dash);
@@ -7443,6 +7560,51 @@ const LOOPFX = {
   flicker:{ label:'Flicker', f:(u, a, c)=>{ c.op *= 1 - a * .8 * Math.abs(Math.sin(TAU * 7 * u) * Math.sin(TAU * 11 * u + .7)); } },
   blink:{ label:'Blink', f:(u, a, c)=>{ if(u >= .5) c.op *= 1 - a; } },
 };
+// v3.98 - many more loop effects. Every one uses whole harmonics of u, so it repeats perfectly; hsh() is a fixed pseudo-random per step (same every loop).
+const hsh = n=> frac(Math.sin(n * 127.1 + 311.7) * 43758.5453);
+const tri = u=> (2 / Math.PI) * Math.asin(Math.sin(TAU * u));
+Object.assign(LOOPFX, {
+  breathe:{ label:'Breathe', f:(u, a, c)=>{ c.s *= 1 + a * .24 * (.5 - .5 * Math.cos(TAU * u)); } },
+  throb:{ label:'Throb', f:(u, a, c)=>{ c.s *= 1 + a * .5 * Math.pow(Math.sin(Math.PI * u), 4); } },
+  beat:{ label:'Beat', f:(u, a, c)=>{ c.s *= 1 + a * .5 * Math.exp(-6 * u); } },
+  ping:{ label:'Ping', f:(u, a, c)=>{ c.s *= 1 + a * .6 * u; c.op *= 1 - .8 * a * u; } },
+  twinkle:{ label:'Twinkle', f:(u, a, c)=>{ const v = Math.pow(Math.max(0, Math.sin(TAU * u)), 6); c.s *= 1 + a * .35 * v; c.op *= 1 - a * .5 * (1 - v); } },
+  rubber:{ label:'Rubber band', f:(u, a, c)=>{ c.sx *= 1 + a * .3 * Math.sin(TAU * u); c.sy *= 1 + a * .3 * Math.cos(TAU * u); } },
+  tada:{ label:'Ta-da', f:(u, a, c)=>{ const e = Math.sin(Math.PI * u); c.s *= 1 + a * .3 * e; c.da += a * 14 * e * Math.sin(TAU * 6 * u); } },
+  jello:{ label:'Jello', f:(u, a, c)=>{ const k = a * .2 * Math.sin(Math.PI * u) * Math.sin(TAU * 3 * u); c.da += a * 20 * Math.sin(Math.PI * u) * Math.sin(TAU * 3 * u); c.sx *= 1 + k; c.sy *= 1 - k; } },
+  wobble:{ label:'Wobble', f:(u, a, c)=>{ const k = a * .12 * Math.sin(TAU * u + 1.2); c.da += a * 14 * Math.sin(TAU * u); c.sx *= 1 + k; c.sy *= 1 - k; } },
+  coin:{ label:'Coin flip', f:(u, a, c)=>{ c.sx *= Math.max(.04, Math.abs(Math.cos(TAU * u))); } },
+  cardflip:{ label:'Card flip', f:(u, a, c)=>{ c.sy *= Math.max(.04, Math.abs(Math.cos(TAU * u))); } },
+  sway:{ label:'Sway', f:(u, a, c)=>{ c.dx += Math.sin(TAU * u) * a * c.L * .15; c.da += Math.sin(TAU * u) * a * 10; } },
+  pendulum:{ label:'Pendulum', f:(u, a, c)=>{ c.da += a * 35 * Math.sin(TAU * u); c.dx -= Math.sin(TAU * u) * a * c.L * .2; c.dy -= Math.abs(Math.sin(TAU * u)) * a * c.L * .08; } },
+  rock:{ label:'Rock', f:(u, a, c)=>{ c.da += a * 10 * Math.sin(TAU * u); c.dy += a * c.L * .03 * Math.sin(TAU * 2 * u); } },
+  hover:{ label:'Hover', f:(u, a, c)=>{ c.dy += Math.sin(TAU * u) * a * c.L * .06; c.da += Math.sin(TAU * u + .5) * a * 2; } },
+  levitate:{ label:'Levitate', f:(u, a, c)=>{ c.dy += Math.sin(TAU * u) * a * c.L * .2; c.s *= 1 + a * .04 * Math.sin(TAU * u); } },
+  figure8:{ label:'Figure 8', f:(u, a, c)=>{ c.dx += Math.sin(TAU * u) * a * c.L * .25; c.dy += Math.sin(2 * TAU * u) * a * c.L * .12; } },
+  spiral:{ label:'Spiral', f:(u, a, c)=>{ const r = Math.sin(Math.PI * u) * a * c.L * .3; c.dx += Math.cos(TAU * 2 * u) * r; c.dy += Math.sin(TAU * 2 * u) * r; } },
+  zigzag:{ label:'Zig-zag', f:(u, a, c)=>{ c.dx += tri(2 * u) * a * c.L * .25; } },
+  slalom:{ label:'Slalom', f:(u, a, c)=>{ c.dx += Math.sin(TAU * u) * a * c.L * .4; c.da += Math.cos(TAU * u) * a * 20; } },
+  hop:{ label:'Hop', f:(u, a, c)=>{ c.dy -= Math.max(0, Math.sin(TAU * u)) * a * c.L * .5; } },
+  sidehop:{ label:'Side hop', f:(u, a, c)=>{ c.dx += Math.abs(Math.sin(Math.PI * u)) * a * c.L * .5; } },
+  shiver:{ label:'Shiver', f:(u, a, c)=>{ c.dx += Math.sin(TAU * 20 * u) * a * c.L * .012; c.da += Math.sin(TAU * 17 * u + 1) * a * 2; } },
+  vibrate:{ label:'Vibrate', f:(u, a, c)=>{ c.dx += Math.sin(TAU * 30 * u) * a * c.L * .02; c.dy += Math.cos(TAU * 26 * u) * a * c.L * .02; } },
+  jitter:{ label:'Jitter', f:(u, a, c)=>{ const i = Math.floor(u * 16); c.dx += (hsh(i) - .5) * a * c.L * .1; c.dy += (hsh(i + 50) - .5) * a * c.L * .1; c.da += (hsh(i + 99) - .5) * a * 8; } },
+  glitch:{ label:'Glitch', f:(u, a, c)=>{ const i = Math.floor(u * 20); if(hsh(i + 7) > .72){ c.dx += (hsh(i) - .5) * a * c.L * .35; c.sx *= 1 + (hsh(i + 3) - .5) * a * .5; if(hsh(i + 9) > .5) c.op *= 1 - a * .7; } } },
+  strobe:{ label:'Strobe', f:(u, a, c)=>{ if(frac(u * 8) >= .5) c.op *= 1 - a; } },
+  fadeloop:{ label:'Fade breathe', f:(u, a, c)=>{ c.op *= 1 - a * .9 * (.5 - .5 * Math.cos(TAU * u)); } },
+  neonflicker:{ label:'Neon flicker', glow:true, f:(u, a, c)=>{ const off = hsh(Math.floor(u * 24)) > .8; if(off){ c.op *= 1 - a * .85; c.gl *= 1 - a * .8; } } },
+  glowflash:{ label:'Glow flash', glow:true, f:(u, a, c)=>{ c.gl *= 1 + a * 2.5 * Math.pow(Math.sin(Math.PI * u), 6); } },
+  tickspin:{ label:'Ticking spin', f:(u, a, c)=>{ c.da += 360 * (Math.floor(u * 8) + EASE.easeInOut(frac(u * 8))) / 8; } },
+  easespin:{ label:'Eased spin', f:(u, a, c)=>{ c.da += 360 * EASE.easeInOut(u); } },
+});
+// loop-effect groups for the chip list (anything not listed lands in "More")
+const LOOP_GROUPS = [
+  ['Loop · Pulse & scale', ['pulse', 'heartbeat', 'breathe', 'throb', 'beat', 'ping', 'twinkle', 'squash', 'rubber']],
+  ['Loop · Swing & turn', ['wiggle', 'swing', 'tada', 'jello', 'wobble', 'sway', 'pendulum', 'rock', 'spin', 'tickspin', 'easespin', 'coin', 'cardflip']],
+  ['Loop · Travel', ['bounce', 'float', 'hover', 'levitate', 'orbit', 'figure8', 'spiral', 'zigzag', 'slalom', 'hop', 'sidehop']],
+  ['Loop · Shake & glitch', ['shake', 'shiver', 'vibrate', 'jitter', 'glitch']],
+  ['Loop · Light & blink', ['flicker', 'blink', 'strobe', 'fadeloop', 'neonflicker', 'glowpulse', 'glowflash']],
+];
 const spinFx = { label:'Spin' };
 const ONCEFX = {
   fadeIn:{ label:'Fade in', kind:'in', f:(p, a, c)=>{ c.op *= EASE.easeOut(p); } },
@@ -7458,6 +7620,53 @@ const ONCEFX = {
   fontMorph:{ label:'Morph font & shape', kind:'in', text:true, f:()=>{} },   // handled by the morph renderer below: the letters melt from another font into the current one
 };
 function slide(c, dir, d){ if(dir === 'r') c.dx += d; else if(dir === 'u') c.dy -= d; else if(dir === 'd') c.dy += d; else c.dx -= d; }
+// v3.98 - many more entrances and exits (amt = has an Amount slider, dir = has a "from" side)
+const rollSign = d=> d === 'r' ? -1 : 1;
+Object.assign(ONCEFX, {
+  bounceIn:{ label:'Bounce in', kind:'in', f:(p, a, c)=>{ c.s *= Math.max(0, EASE.bounce(p)); } },
+  elasticIn:{ label:'Elastic in', kind:'in', f:(p, a, c)=>{ c.s *= Math.max(0, EASE.elastic(p)); } },
+  rubberIn:{ label:'Rubber in', kind:'in', f:(p, a, c)=>{ c.sx *= Math.max(0, EASE.elastic(p)); c.sy *= Math.max(0, EASE.elastic(Math.min(1, p * 1.15))); } },
+  jelloIn:{ label:'Jello in', kind:'in', f:(p, a, c)=>{ c.da += 25 * Math.sin(TAU * 4 * p) * Math.pow(1 - p, 2); c.s *= EASE.easeOut(Math.min(1, p * 1.6)); c.op *= Math.min(1, p * 5); } },
+  slamIn:{ label:'Slam in', kind:'in', f:(p, a, c)=>{ c.s *= 1 + (1 - EASE.bounce(p)) * 2.5; c.op *= Math.min(1, p * 8); } },
+  swoopIn:{ label:'Swoop down', kind:'in', amt:true, f:(p, a, c)=>{ const e = EASE.easeOut(p); c.s *= 1 + (1 - e) * 3 * a * 2; c.op *= e; } },
+  swingIn:{ label:'Swing in', kind:'in', amt:true, f:(p, a, c)=>{ c.da += 80 * a * 2 * (1 - EASE.elastic(p)); c.op *= Math.min(1, p * 4); } },
+  stretchIn:{ label:'Stretch in', kind:'in', f:(p, a, c)=>{ const e = EASE.easeOut(p); c.sx *= 1 + (1 - e) * 3; c.sy *= Math.max(.02, e); c.op *= e; } },
+  squeezeIn:{ label:'Squeeze in', kind:'in', f:(p, a, c)=>{ const e = EASE.easeOut(p); c.sx *= Math.max(.02, e); c.sy *= 1 + (1 - e) * 2; c.op *= e; } },
+  unfoldIn:{ label:'Unfold in', kind:'in', f:(p, a, c)=>{ c.sy *= Math.max(.02, EASE.elastic(p)); c.op *= Math.min(1, p * 5); } },
+  flipInX:{ label:'Flip in (side)', kind:'in', f:(p, a, c)=>{ c.sx *= Math.max(.02, EASE.easeOut(p)); c.op *= Math.min(1, p * 4); } },
+  flipInY:{ label:'Flip in (top)', kind:'in', f:(p, a, c)=>{ c.sy *= Math.max(.02, EASE.easeOut(p)); c.op *= Math.min(1, p * 4); } },
+  spinIn:{ label:'Spin in', kind:'in', f:(p, a, c)=>{ const e = 1 - EASE.easeOut(p); c.da -= 540 * e; c.s *= 1 - .9 * e; c.op *= Math.min(1, p * 3); } },
+  rollIn:{ label:'Roll in', kind:'in', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = 1 - EASE.easeOut(p); slide(c, fx.dir, e * c.W * .6 * a * 2); c.da -= 360 * e * rollSign(fx.dir); c.op *= Math.min(1, p * 4); } },
+  tumbleIn:{ label:'Tumble in', kind:'in', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = 1 - EASE.easeOut(p); slide(c, fx.dir, e * c.W * .6 * a * 2); c.da -= 720 * e * rollSign(fx.dir); c.s *= 1 - .5 * e; c.op *= Math.min(1, p * 4); } },
+  lightspeedIn:{ label:'Lightspeed in', kind:'in', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = 1 - EASE.easeOut(p); slide(c, fx.dir, e * c.W * .8 * a * 2); c.sx *= 1 + e * 1.5; c.op *= Math.min(1, p * 5); } },
+  riseIn:{ label:'Rise in', kind:'in', amt:true, f:(p, a, c)=>{ const e = EASE.easeOut(p); c.dy += (1 - e) * c.L * .8 * a * 2; c.op *= e; } },
+  swirlIn:{ label:'Swirl in', kind:'in', amt:true, f:(p, a, c)=>{ const e = 1 - EASE.easeOut(p), g = e * TAU * 1.25, r = e * c.L * .6 * a * 2; c.dx += Math.cos(g) * r; c.dy += Math.sin(g) * r; c.da -= 360 * e; c.s *= 1 - .7 * e; c.op *= 1 - e; } },
+  flashIn:{ label:'Flash in', kind:'in', f:(p, a, c)=>{ if(p < .6 && Math.floor(p * 14) % 2 === 0) c.op *= .15; } },
+  glitchIn:{ label:'Glitch in', kind:'in', amt:true, f:(p, a, c)=>{ const d = 1 - p, i = Math.floor(p * 24); c.dx += (hsh(i + 1) - .5) * c.W * .15 * a * 2 * d; c.sx *= 1 + (hsh(i + 2) - .5) * .6 * d; if(p < .8 && hsh(i + 3) < .4) c.op *= .1; } },
+  shrinkOut:{ label:'Shrink away', kind:'out', f:(p, a, c)=>{ c.s *= Math.max(0, 1 - EASE.easeIn(p)); } },
+  popOut:{ label:'Pop out', kind:'out', f:(p, a, c)=>{ c.s *= p < .2 ? 1 + .25 * (p / .2) : 1.25 * Math.max(0, 1 - EASE.easeIn((p - .2) / .8)); } },
+  foldOut:{ label:'Fold out', kind:'out', f:(p, a, c)=>{ c.sy *= Math.max(.02, 1 - EASE.easeIn(p)); c.op *= 1 - EASE.easeIn(p) * .6; if(p >= 1) c.op = 0; } },
+  flipOutX:{ label:'Flip out (side)', kind:'out', f:(p, a, c)=>{ c.sx *= Math.max(.02, 1 - EASE.easeIn(p)); c.op *= 1 - Math.pow(p, 3); } },
+  flipOutY:{ label:'Flip out (top)', kind:'out', f:(p, a, c)=>{ c.sy *= Math.max(.02, 1 - EASE.easeIn(p)); c.op *= 1 - Math.pow(p, 3); } },
+  spinOut:{ label:'Spin out', kind:'out', f:(p, a, c)=>{ const e = EASE.easeIn(p); c.da += 540 * e; c.s *= 1 - .95 * e; c.op *= 1 - e; } },
+  rollOut:{ label:'Roll out', kind:'out', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = EASE.easeIn(p); slide(c, fx.dir, e * c.W * .6 * a * 2); c.da += 360 * e * rollSign(fx.dir); c.op *= 1 - Math.pow(p, 2); } },
+  tumbleOut:{ label:'Tumble out', kind:'out', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = EASE.easeIn(p); slide(c, fx.dir, e * c.W * .6 * a * 2); c.da += 720 * e * rollSign(fx.dir); c.s *= 1 - .5 * e; c.op *= 1 - Math.pow(p, 2); } },
+  lightspeedOut:{ label:'Lightspeed out', kind:'out', dir:true, amt:true, f:(p, a, c, fx)=>{ const e = EASE.easeIn(p); slide(c, fx.dir, e * c.W * .8 * a * 2); c.sx *= 1 + e * 1.5; c.op *= 1 - Math.pow(p, 3); } },
+  explodeOut:{ label:'Explode out', kind:'out', amt:true, f:(p, a, c)=>{ const e = EASE.easeIn(p); c.s *= 1 + e * 3 * a * 2; c.op *= 1 - e; } },
+  hingeOut:{ label:'Fall off hinge', kind:'out', f:(p, a, c)=>{ c.da += 70 * EASE.easeIn(Math.min(1, p * 2)); c.dy += EASE.easeIn(p) * c.H * .6; c.op *= 1 - EASE.easeIn(p); } },
+  sinkOut:{ label:'Sink out', kind:'out', amt:true, f:(p, a, c)=>{ const e = EASE.easeIn(p); c.dy += e * c.L * .8 * a * 2; c.op *= 1 - e; } },
+  floatAway:{ label:'Float away', kind:'out', amt:true, f:(p, a, c)=>{ const e = EASE.easeIn(p); c.dy -= e * c.H * .6 * a * 2; c.dx += Math.sin(p * TAU * 1.5) * c.L * .06 * e; c.op *= 1 - e; } },
+  swirlOut:{ label:'Swirl out', kind:'out', amt:true, f:(p, a, c)=>{ const e = EASE.easeIn(p), g = e * TAU * 1.25, r = e * c.L * .6 * a * 2; c.dx += Math.cos(g) * r; c.dy += Math.sin(g) * r; c.da += 360 * e; c.s *= 1 - .7 * e; c.op *= 1 - e; } },
+  flashOut:{ label:'Flash out', kind:'out', f:(p, a, c)=>{ if(p >= .7) c.op = 0; else if(Math.floor(p * 14) % 2 === 1) c.op *= .15; } },
+  glitchOut:{ label:'Glitch out', kind:'out', amt:true, f:(p, a, c)=>{ const i = Math.floor(p * 24); c.dx += (hsh(i + 1) - .5) * c.W * .15 * a * 2 * p; c.sx *= 1 + (hsh(i + 2) - .5) * .6 * p; if(p > .85 || hsh(i + 3) < .4 * p) c.op *= .1; if(p >= 1) c.op = 0; } },
+});
+const ONCE_GROUPS = [
+  ['Entrance · Pop & bounce', ['fadeIn', 'popIn', 'zoomIn', 'bounceIn', 'elasticIn', 'rubberIn', 'jelloIn', 'slamIn', 'swoopIn', 'dropIn', 'riseIn']],
+  ['Entrance · Slide & spin', ['slideIn', 'rollIn', 'tumbleIn', 'lightspeedIn', 'spinIn', 'swirlIn', 'swingIn', 'gather']],
+  ['Entrance · Flip & stretch', ['flipInX', 'flipInY', 'unfoldIn', 'stretchIn', 'squeezeIn', 'flashIn', 'glitchIn']],
+  ['Exit · Fade & shrink', ['fadeOut', 'zoomOut', 'shrinkOut', 'popOut', 'foldOut', 'explodeOut', 'sinkOut', 'floatAway', 'flashOut', 'glitchOut']],
+  ['Exit · Slide & spin', ['slideOut', 'rollOut', 'tumbleOut', 'lightspeedOut', 'spinOut', 'swirlOut', 'hingeOut', 'flipOutX', 'flipOutY', 'scatter']],
+];
 const FXLIST = Object.assign({ spin:spinFx }, LOOPFX, ONCEFX);
 
 // recorded slider moves: fx.auto = { amount:[{t,v}...], morph:[{t,v}...] } - straight lines between the recorded points
@@ -7638,7 +7847,7 @@ function addEffect(o, type, opt, idx, n){
   if(LOOPFX[type] || type === 'spin') fx.phase = ((opt.stagger || 0) / 100) * (idx / Math.max(1, n));
   else { fx.len = fx.len || ({ fontMorph:1.2, gather:1, scatter:1 })[type] || .6; if(type === 'gather' || type === 'scatter') fx.seed = frac(objs().indexOf(o) * .6180339 + .13); if(type === 'fontMorph') fx.from = opt.from || defaultFrom(o); fx.start = (def.kind === 'out' ? Math.max(0, A.dur - fx.len) : 0) + ((opt.stagger || 0) / 100) * A.dur * .5 * (idx / Math.max(1, n)); if(def.dir) fx.dir = opt.dir || 'l'; }
   delete fx.stagger; if(type === 'spin') fx.dir = opt.dir || 'cw';
-  if(type === 'glowpulse' && !glowOf(o)){ o.__fx = Object.assign({}, o.__fx); o.__fx.stack = Object.assign({}, o.__fx.stack, { glow:{ on:true, color:'#ffd24a', size:Math.max(8, Math.round(sizeOf(o) * .08)), bright:100 } }); tr.keys.forEach(k=>{ if(k.p.gl === null || k.p.gl === undefined) k.p.gl = 100; }); }
+  if((type === 'glowpulse' || def.glow) && !glowOf(o)){ o.__fx = Object.assign({}, o.__fx); o.__fx.stack = Object.assign({}, o.__fx.stack, { glow:{ on:true, color:'#ffd24a', size:Math.max(8, Math.round(sizeOf(o) * .08)), bright:100 } }); tr.keys.forEach(k=>{ if(k.p.gl === null || k.p.gl === undefined) k.p.gl = 100; }); }
   tr.fx.push(fx); return fx;
 }
 // make every track loop perfectly: last key = first key, whole cycles
@@ -7879,7 +8088,10 @@ function build(){
   q('anEase').onchange = ()=>{ const s = A.sel; if(s && s.kind === 'key'){ const k = A.tracks[s.id] && A.tracks[s.id].keys[s.i]; if(k){ k.e = q('anEase').value; applyAt(A.t); } } };
   q('anKeyT').onchange = ()=>{ const s = A.sel; if(s && s.kind === 'key'){ const tr = A.tracks[s.id], k = tr && tr.keys[s.i]; if(k){ k.t = clamp(frameT(+q('anKeyT').value || 0), 0, A.dur); tr.keys.sort((a, b)=> a.t - b.t); A.sel.i = tr.keys.indexOf(k); renderRows(); applyAt(A.t); } } };
   q('anDel').onclick = delSelected;
-  q('anChips').innerHTML = '<div class="an-g">Loop</div>' + Object.keys(LOOPFX).concat(['spin']).map(k=> `<span class="chip" data-fx="${k}">${FXLIST[k].label}</span>`).join('') + '<div class="an-g">Text &amp; shape</div><span class="chip" data-fx="fontMorph" data-tip="Letters melt from another font into the text’s own font; warped shapes grow into their warp. Has a Morph slider you can record.">' + ONCEFX.fontMorph.label + '</span>' + '<div class="an-g">Entrance / exit</div>' + Object.keys(ONCEFX).filter(k=> k !== 'fontMorph').map(k=> `<span class="chip" data-fx="${k}">${ONCEFX[k].label}</span>`).join('');
+  const chipsOf = keys=> keys.filter(k=> FXLIST[k]).map(k=> `<span class="chip" data-fx="${k}">${FXLIST[k].label}</span>`).join('');
+  const listed = new Set([].concat(LOOP_GROUPS, ONCE_GROUPS).reduce((l, g)=> l.concat(g[1]), []).concat(['fontMorph']));
+  const more = Object.keys(FXLIST).filter(k=> !listed.has(k));
+  q('anChips').innerHTML = LOOP_GROUPS.map(g=> `<div class="an-g">${g[0]}</div>` + chipsOf(g[1])).join('') + '<div class="an-g">Text &amp; shape</div><span class="chip" data-fx="fontMorph" data-tip="Letters melt from another font into the text’s own font; warped shapes grow into their warp. Has a Morph slider you can record.">' + ONCEFX.fontMorph.label + '</span>' + ONCE_GROUPS.map(g=> `<div class="an-g">${g[0]}</div>` + chipsOf(g[1])).join('') + (more.length ? '<div class="an-g">More</div>' + chipsOf(more) : '');
   q('anChips').onclick = e=>{ const c = e.target.closest('.chip'); if(c) applyPreset(c.dataset.fx); };
   document.addEventListener('keydown', e=>{ if(!A.on) return; if((e.key === 'Delete' || e.key === 'Backspace') && A.sel && !/input|textarea|select/i.test((e.target.tagName || ''))){ e.preventDefault(); e.stopImmediatePropagation(); delSelected(); } }, true);
   document.addEventListener('mousedown', e=>{ if(A.on && e.button === 1 && e.target.closest('#vp')){ mid = { x:e.clientX, y:e.clientY, t:Date.now() }; e.preventDefault(); } }, true);
@@ -7917,7 +8129,7 @@ function clearKeys(id){ const tr = A.tracks[id], o = byId(id); if(!tr) return; c
 let onSig = '', focusIds = [];
 const cardTargets = ()=>{ const t = targets(); if(t.length){ focusIds = t.map(o=> idOf(o)); return t; } return focusIds.map(byId).filter(Boolean); };
 const armed = new Set();
-const CAPS = t=>({ amount:!!LOOPFX[t] || ['slideIn', 'slideOut', 'dropIn', 'gather', 'scatter'].includes(t), cycles:!!LOOPFX[t] || t === 'spin', dir:t === 'slideIn' || t === 'slideOut', spin:t === 'spin', from:t === 'fontMorph' });
+const CAPS = t=>({ amount:!!LOOPFX[t] || ['slideIn', 'slideOut', 'dropIn', 'gather', 'scatter'].includes(t) || !!(ONCEFX[t] && ONCEFX[t].amt), cycles:!!LOOPFX[t] || t === 'spin', dir:!!(ONCEFX[t] && ONCEFX[t].dir), spin:t === 'spin', from:t === 'fontMorph' });
 const fxWin = fx=>{ const once = !!ONCEFX[fx.type], st = fx.start || 0; return { st, ln:fx.len || (once ? .6 : A.dur - st) }; };
 function cardRow(label, k, min, max, step){ const s = step ? ` step="${step}"` : ''; return `<div class="r"><label>${label}</label><input type="range" data-k="${k}" min="${min}" max="${max}"${s}><div class="f"><input type="number" data-k="${k}" min="${min}" max="${max}"${s}></div></div>`; }
 const fontBtn = (k, name)=> `<button class="font-btn grow" data-fb="${k}" style="height:26px;min-width:0"><span class="fp" style="font-family:'${esc(name)}'">${esc(name)}</span><i data-i="chevd"></i></button>`;
@@ -7931,7 +8143,7 @@ function onElement(){
       return `<div class="an-el"><div class="an-eh"><b>${esc(o.name || o.type)}</b><button class="btn sm" data-rm="track|${id}" data-tip="Remove all animation from this element">Remove all</button></div>`
       + tr.fx.map((fx, i)=>{ const c = CAPS(fx.type), on = A.sel && A.sel.kind === 'fx' && A.sel.id === id && A.sel.i === i;
         return `<div class="an-fxc ${on ? 'on' : ''}" data-id="${id}" data-i="${i}"><div class="an-er"><b>${esc(FXLIST[fx.type].label)}</b><span class="an-recs"><button class="rec" data-rec="${id}|${i}" data-tip="Record: while this is red, every slider move you make is written onto the timeline at the playhead. Press Play and move the slider, or scrub to a time and set it.">● Rec</button><button class="btn sm" data-recclear="${id}|${i}" style="display:none" data-tip="Delete the recorded slider moves of this effect">Clear rec</button><button class="x" data-rm="fx|${id}|${i}" title="Remove this effect">×</button></span></div>`
-          + (c.from ? cardRow('Morph', 'morph', 0, 100) : '') + (c.amount ? cardRow('Amount', 'amount', 0, 100) : '') + (c.cycles ? cardRow('Cycles', 'cycles', 1, 8) : '')
+          + (c.from ? cardRow('Morph', 'morph', 0, 100) : '') + (c.amount ? cardRow('Amount', 'amount', 0, 300) : '') + (c.cycles ? cardRow('Cycles', 'cycles', 1, 24) : '')
           + (c.dir ? '<div class="r"><label>Slide from</label><select data-k="dir" class="grow"><option value="l">Left</option><option value="r">Right</option><option value="u">Top</option><option value="d">Bottom</option></select></div>' : '')
           + (c.spin ? '<div class="r"><label>Direction</label><select data-k="dir" class="grow"><option value="cw">Clockwise</option><option value="ccw">Anticlockwise</option></select></div>' : '')
           + (c.from ? `<div class="r"><label>Start font</label>${fontBtn('from', fx.from || defaultFrom(o))}</div><div class="r"><label>End font</label>${fontBtn('to', fontOf(o))}</div>` : '')
@@ -8142,7 +8354,7 @@ function aiApply(a){
       const type = String(a.type || ''); if(!FXLIST[type]) return false;
       const list = (Array.isArray(a.refs) ? a.refs : [a.ref]).map(aiObj).filter(Boolean); if(!list.length) return false;
       if(type === 'fontMorph' && !list.every(canMorph)) return false;
-      const opt = { amount:aiNum(a.amount, 0, 100, 50), cycles:aiNum(a.cycles, .25, 20, 1), stagger:aiNum(a.stagger, 0, 100, 0), dir:['l', 'r', 'u', 'd', 'cw', 'ccw'].includes(a.dir) ? a.dir : undefined };
+      const opt = { amount:aiNum(a.amount, 0, 300, 50), cycles:aiNum(a.cycles, .25, 20, 1), stagger:aiNum(a.stagger, 0, 100, 0), dir:['l', 'r', 'u', 'd', 'cw', 'ccw'].includes(a.dir) ? a.dir : undefined };
       if(type === 'fontMorph' && a.from && (MS.fontNames || []).includes(a.from)) opt.from = a.from;
       if(!opt.dir) delete opt.dir;
       list.forEach((o, i)=>{ const fx = addEffect(o, type, opt, i, list.length); if(!fx || LOOPFX[type] || type === 'spin') return;
