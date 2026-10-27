@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.03 beta';
+window.IMAGINATION_VERSION = '4.05 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -581,7 +581,9 @@ const P = {
   type:'M4 7V5h16v2M9 19h6M12 5v14',
   word:'M3 7h18M3 12h12M3 17h18',
   stroke:'M5 5h14v14H5zM9 9h6v6H9z',
-  hex:'M8 4h8l5 8-5 8H8l-5-8z',
+  hex:'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 3v18',
+  import:'M12 3v11M7 9l5 5 5-5M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4',
+  pixsnap:'M4 4h4M4 4v4M20 4h-4M20 4v4M4 20h4M4 20v-4M20 20h-4M20 20v-4M12 9v6M9 12h6',
   cut:'M6 6m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M6 18m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M8 8l12 11M8 16L20 5',
   paste:'M8 4h8v3H8zM6 5H5v16h14V5h-1M9 12h6M9 16h6',
   selectall:'M4 4h16v16H4zM8 8h8v8H8z',
@@ -1522,6 +1524,12 @@ function wirePanZoom(){
       e.preventDefault(); e.stopImmediatePropagation(); startPan(e);
     }
   }, true);
+  // wheel-click grabs the page from anywhere in the workspace (grey area, rulers, over the overlay), not only over the canvas
+  vp.addEventListener('mousedown', e=>{
+    if(e.button !== 1 || pan) return;
+    e.preventDefault(); e.stopImmediatePropagation(); startPan(e);
+  }, true);
+  vp.addEventListener('auxclick', e=>{ if(e.button === 1){ e.preventDefault(); e.stopPropagation(); } }, true);
   window.addEventListener('mousemove', e=>{
     if(!pan) return;
     S.view.x = pan.vx + (e.clientX - pan.x); S.view.y = pan.vy + (e.clientY - pan.y); applyView();
@@ -3492,7 +3500,7 @@ function syncProps(){
   if(!obj) return;
   syncing = true;
   const b = obj.getBoundingRect(true, true), multi = obj.type === 'activeSelection';
-  setVal('propX', Math.round(b.left)); setVal('propY', Math.round(b.top)); setVal('propW', Math.round(b.width)); setVal('propH', Math.round(b.height));
+  setVal('propX', Math.round(b.left * 10) / 10); setVal('propY', Math.round(b.top * 10) / 10); setVal('propW', Math.round(b.width)); setVal('propH', Math.round(b.height));
   setVal('propAngleNum', Math.round(((obj.angle || 0) % 360 + 360) % 360));
   const op = Math.round((obj.opacity ?? 1) * 100); setVal('propOpacity', op); setVal('propOpacityNum', op); MS.fillRange($('#propOpacity'));
   setVal('propBlend', obj.globalCompositeOperation || 'source-over');
@@ -3565,6 +3573,18 @@ function wireProps(){
     done('Transform');
   };
   ['propX','propY','propW','propH'].forEach(id=> num(id, applyBox));
+  // pixel nudge pad: any step size, hold to repeat; works on the single selected item (even one picked inside a group)
+  const stepOf = ()=> Math.max(0.1, +$('#propNudgeStep').value || 1);
+  $$('[data-nudge]').forEach(b=>{
+    const go = ()=>{ const [dx, dy] = b.dataset.nudge.split(',').map(Number), st = stepOf(); MS.ops.nudge(dx * st, dy * st); };
+    let t1 = null, t2 = null; const stop = ()=>{ clearTimeout(t1); clearInterval(t2); t1 = t2 = null; };
+    b.addEventListener('mousedown', e=>{ if(e.button !== 0) return; e.preventDefault(); go(); t1 = setTimeout(()=>{ t2 = setInterval(go, 60); }, 350); });
+    ['mouseup', 'mouseleave', 'blur'].forEach(ev=> b.addEventListener(ev, stop));
+  });
+  $('#propPixSnap').addEventListener('click', ()=>{
+    const o = c().getActiveObject(); if(!o) return; const b = o.getBoundingRect(true, true);
+    o.set({ left:o.left + (Math.round(b.left) - b.left), top:o.top + (Math.round(b.top) - b.top) }); o.setCoords(); done('Pixel snap', true);
+  });
   num('propAngleNum', v=>{ const o = c().getActiveObject(); if(!o) return; const ctr = o.getCenterPoint(); o.rotate(v); o.setPositionByOrigin(ctr, 'center', 'center'); o.setCoords(); done('Rotate'); });
   $('#propLockBtn').addEventListener('click', ()=>{ const l = $('#propLockRatio'); l.checked = !l.checked; $('#propLockBtn').classList.toggle('active', l.checked); $('#propLockBtn').innerHTML = MS.icon(l.checked ? 'link' : 'unlink'); });
   $('#btnFlipH').addEventListener('click', ()=> MS.ops.flip('h')); $('#btnFlipV').addEventListener('click', ()=> MS.ops.flip('v')); $('#btnRot90').addEventListener('click', ()=> MS.ops.rotate90());
@@ -5034,7 +5054,8 @@ function applyDistress(o, ds){
    Stored per object in __fx.stack = { shadow:{on,color,alpha,blur,depth,angle}, glow:{on,color,size,bright}, outline:{on,color,width} }.
    They are painted by us (not Fabric's single native shadow): shadow first, then glow, then outline, then the element itself on top,
    so the glow can never separate from, or sit in front of, its source. */
-function rgba(hex, a){ const c = MS.hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${a})`; }
+const CLEAR = 'rgba(0,0,0,0)', clr = c=> c === 'none' ? CLEAR : c;   // a colour set to 'none' is the Clear option: it draws nothing
+function rgba(hex, a){ if(hex === 'none') return CLEAR; const c = MS.hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${a})`; }
 function eachTarget(fn){ cv().getActiveObjects().forEach(o=>{ fn(o); o.dirty = true; MS.dirtyObj(o); }); cv().requestRenderAll(); }
 function objSize(o){ const b = o.getBoundingRect(true, true); return Math.max(b.width, b.height, 20); }
 const mx = (v, b)=> typeof v === 'function' ? v(b) : v;
@@ -5112,14 +5133,14 @@ function underlay(o, ctx){
   ctx.save(); o.transform(ctx); o._setOpacity(ctx); o.__fxPass = true;
   try{
     const plain = ()=> o.drawObject(ctx, false);
-    const sil = ol ? ()=> withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
+    const sil = ol ? ()=> withProps(o, { fill:clr(ol.color), stroke:clr(ol.color), strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
     if(sh){ const a = sh.angle * Math.PI / 180; shadowOnly(o, ctx, rgba(sh.color, clamp(sh.alpha, 0, 100) / 100), sh.blur, Math.cos(a) * sh.depth, Math.sin(a) * sh.depth, sil); }
     if(gl){
       const b = Math.max(0, gl.bright) / 100, reps = 1 + Math.floor(b);
       // tight + medium + wide halos stacked: the bright part always hugs the element, however large the glow
       [[.12, .95], [.35, .8], [1, .7]].forEach(([f, w])=>{ for(let i = 0; i < reps; i++) shadowOnly(o, ctx, rgba(gl.color, clamp(b * w, 0, 1)), Math.max(1, gl.size * f), 0, 0, sil); });
     }
-    if(ol) withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+    if(ol) withProps(o, { fill:clr(ol.color), stroke:clr(ol.color), strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   } finally { o.__fxPass = false; ctx.restore(); }
 }
 // draws fn() with the element moved by (dx, dy) canvas px and its opacity scaled by alpha
@@ -5130,7 +5151,7 @@ function atOffset(o, ctx, dx, dy, alpha, fn){
 function underlayExtra(o, ctx){
   const st = stackOf(o); if(!st) return;
   const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
-  const solid = (col, sw)=> ()=> withProps(o, { fill:col, stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+  const solid = (col, sw)=> ()=> withProps(o, { fill:clr(col), stroke:clr(col), strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
   o.__fxPass = true;
   try{
@@ -5181,7 +5202,7 @@ function setParam(k, p, v){
 function block(k){
   const d = FXDEF[k];
   return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> /^color/.test(p)
-    ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span></div>`
+    ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span><label class="chk fxclr" data-tip="Clear: no colour for this part"><input type="checkbox" data-clear="${p}"> Clear</label></div>`
     : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + `</div></div>`;
 }
 function refresh(root){
@@ -5193,7 +5214,7 @@ function refresh(root){
     const b = root.querySelector(`.fxb[data-fx="${k}"]`), p = Object.assign(FXDEF[k].def(base), st[k] || {}), on = !!(st[k] && st[k].on);
     b.querySelector('[data-on]').checked = on; b.querySelector('.fxbody').style.display = on ? '' : 'none';
     FXDEF[k].ctl.forEach(([name, , lo, hi])=>{
-      if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); if(document.activeElement !== e) e.value = p[name]; return; }
+      if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); const none = p[name] === 'none', ck = b.querySelector(`[data-clear="${name}"]`); ck.checked = none; e.style.opacity = none ? .3 : ''; if(!none && document.activeElement !== e) e.value = p[name]; return; }
       const r = b.querySelector(`[data-p="${name}"]`), n = b.querySelector(`[data-n="${name}"]`); r.max = Math.max(mx(hi, base), +p[name]);
       if(document.activeElement !== r) r.value = p[name]; if(document.activeElement !== n) n.value = Math.round(p[name]); MS.fillRange(r);
     });
@@ -5208,9 +5229,10 @@ MS.fx.build = function(root){
     if(e.target.matches('.fxLook')){ const L = LOOKS[e.target.value]; e.target.value = ''; if(!L) return; unifyIfAsked(root);
       eachTarget(o=>{ migrate(o); const st = ensureStack(o), b = objSize(o); KINDS.forEach(k=>{ if(st[k]) st[k] = Object.assign({}, st[k], { on:false }); }); Object.keys(L).forEach(k=>{ st[k] = Object.assign(FXDEF[k].def(b), L[k](b), { on:true }); }); });
       commit('Look', true); return; }
+    const clrBox = e.target.closest('[data-clear]'); if(clrBox){ const b = clrBox.closest('.fxb'), nm = clrBox.dataset.clear, ci = b.querySelector(`[data-p="${nm}"]`); setParam(b.dataset.fx, nm, clrBox.checked ? 'none' : ci.value); return; }
     const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(/^color/.test(e.target.dataset.p || '')) MS.noteColor && MS.noteColor(e.target.value); });
   root.addEventListener('input', e=>{
-    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]')) return;
+    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]') || t.matches('[data-clear]')) return;
     const p = t.dataset.p || t.dataset.n, v = t.type === 'color' ? t.value : +t.value; if(t.type !== 'color' && !isFinite(v)) return;
     const r = b.querySelector(`[data-p="${p}"]`), n = b.querySelector(`[data-n="${p}"]`);
     if(t.dataset.n){ if(+t.value > +r.max) r.max = t.value; r.value = t.value; MS.fillRange(r); } else if(n){ n.value = Math.round(v); MS.fillRange(r); }
@@ -7208,7 +7230,7 @@ MS.initGroups = function(){
   const p = document.createElement('aside'); p.id = 'leftPanel';
   p.innerHTML = `<div class="lp-h"><button class="ib" id="lpToggle" data-tip="Show / hide the Groups panel">${MS.icon('group')}</button><b>Groups</b><span class="layer-badge" id="grpCount"></span></div>
     <div class="lp-body"><div class="lp-sec"><div id="grpList"></div></div>
-    <div class="lp-sec"><div class="sect-h" style="cursor:default;padding:8px 10px">${MS.icon('save')}<span>Assets &amp; saved groups</span><button class="tb" id="grpSaveSel" data-tip="Save the selected item(s) to assets">${MS.icon('plus')}</button><span class="layer-badge" id="grpLibCount"></span><span class="sp"></span><button class="tb" id="grpFolder" data-tip="Browse saved files / pick a folder">${MS.icon('folder')}</button><button class="tb" id="grpImport" data-tip="Add a group file">${MS.icon('open')}</button></div><div class="r" style="padding:0 10px 6px"><button class="btn sm" id="grpToFolder" style="display:none" data-tip="Copy groups kept only in this browser into the groups folder">Copy into folder</button></div><div id="grpLib"></div></div>
+    <div class="lp-sec"><div class="lp-title">${MS.icon('save')}<span>Assets &amp; saved groups</span><span class="layer-badge" id="grpLibCount"></span></div><div class="lp-actions"><button class="btn sm" id="grpSaveSel" data-tip="Save the selected item(s) to assets">${MS.icon('plus')}<span>Save selection</span></button><button class="btn sm" id="grpFolder" data-tip="Browse saved files / pick a folder">${MS.icon('folder')}<span>Browse</span></button><button class="btn sm" id="grpImport" data-tip="Add a group file">${MS.icon('import')}<span>Import</span></button></div><div class="r" style="padding:0 10px 6px"><button class="btn sm block" id="grpToFolder" style="display:none" data-tip="Copy groups kept only in this browser into the groups folder">Copy into folder</button></div><div id="grpLib"></div></div>
     <div class="hint" style="padding:8px 10px">Lock ON: the group moves, rotates and scales as one and keeps its layout. Lock OFF: edit items on their own. Hold <kbd>Alt</kbd> while clicking to pick one item inside a locked group.</div></div>
     <input type="file" id="grpFile" accept=".json" hidden>`;
   main.insertBefore(p, tool.nextSibling);

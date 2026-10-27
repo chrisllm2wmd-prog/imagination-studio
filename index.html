@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <link rel="stylesheet" href="css/studio.css">
-<script src="app.js?v=4.03-beta" defer></script>
+<script src="app.js?v=4.05-beta" defer></script>
 </head>
 <body data-ws="logo">
 
@@ -112,6 +112,7 @@
                 <div class="sect-h"><i data-i="chevd" class="car"></i>Transform<span class="sp"></span></div>
                 <div class="sect-b">
                   <div class="r two"><div class="f"><span data-scrub="propX">X</span><input type="number" id="propX"><em>px</em></div><div class="f"><span data-scrub="propY">Y</span><input type="number" id="propY"><em>px</em></div></div>
+                  <div class="r nudge"><div class="pad"><span></span><button class="tb" data-nudge="0,-1" data-tip="Nudge up (arrow key; Shift = step x 10)"><i data-i="chevu"></i></button><span></span><button class="tb" data-nudge="-1,0" data-tip="Nudge left"><i data-i="chevr" style="transform:scaleX(-1)"></i></button><button class="tb" id="propPixSnap" data-tip="Snap position to whole pixels"><i data-i="pixsnap"></i></button><button class="tb" data-nudge="1,0" data-tip="Nudge right"><i data-i="chevr"></i></button><span></span><button class="tb" data-nudge="0,1" data-tip="Nudge down"><i data-i="chevd"></i></button><span></span></div><div class="side"><div class="f"><span>Step</span><input type="number" id="propNudgeStep" min="0.1" step="1" value="1"><em>px</em></div><span class="hint">Hold a button to repeat. Alt-click picks one item inside a locked group.</span></div></div>
                   <div class="r two"><div class="f"><span data-scrub="propW">W</span><input type="number" id="propW" min="1"><em>px</em></div><div class="f"><span data-scrub="propH">H</span><input type="number" id="propH" min="1"><em>px</em></div></div>
                   <div class="r">
                     <button class="tb" id="propLockBtn" data-tip="Lock aspect ratio"><i data-i="unlink"></i></button>

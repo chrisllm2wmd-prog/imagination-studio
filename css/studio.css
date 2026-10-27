@@ -337,7 +337,10 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 .checkbar{height:26px;border-radius:6px;border:1px solid var(--line2);overflow:hidden;background-image:linear-gradient(45deg,#777 25%,transparent 25%,transparent 75%,#777 75%),linear-gradient(45deg,#777 25%,transparent 25%,transparent 75%,#777 75%);background-size:10px 10px;background-position:0 0,5px 5px;background-color:#999;} .checkbar i{display:block;height:100%;}
 .stop-row{gap:6px;min-height:28px;}
 
-#leftPanel .sect-h{font-size:10.5px;} #leftPanel #grpImport{margin-left:auto;}
+.lp-title{display:flex;align-items:center;gap:7px;padding:9px 10px 6px;font-weight:700;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--mut);} .lp-title .ic{width:13px;height:13px;flex:none;} .lp-title span:not(.layer-badge){flex:1;min-width:0;}
+.lp-actions{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:0 10px 8px;} .lp-actions .btn{padding:0 6px;min-width:0;} .lp-actions .btn .ic{width:13px;height:13px;flex:none;} #grpSaveSel{grid-column:1/-1;}
+.nudge{display:flex;align-items:center;gap:8px;} .nudge .pad{display:grid;grid-template-columns:repeat(3,26px);grid-template-rows:repeat(3,26px);gap:3px;flex:none;} .nudge .pad .tb{min-width:0;padding:0;width:26px;height:26px;} .nudge .pad .tb .ic{width:13px;height:13px;} .nudge .side{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;} .nudge .side .btn{width:100%;}
+
 
 
 #splash{position:fixed;inset:0;z-index:5000;background:radial-gradient(circle at 50% 35%,#1d2030,#0b0c10 70%);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:opacity .4s;}
@@ -578,3 +581,5 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 @keyframes spFade{from{opacity:0;}to{opacity:1;}}
 #splash{cursor:default;} #splash:has(.sp-go){cursor:pointer;}
 @media (prefers-reduced-motion:reduce){#splash .sp-load i{animation:none;width:100%;}#splash .sp-ver,#splash .sp-bottom{animation:none;}}
+
+.fxclr{margin-left:8px;font-size:11px;color:var(--mut);}
