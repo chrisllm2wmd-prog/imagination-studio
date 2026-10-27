@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.10 beta';
+window.IMAGINATION_VERSION = '4.11 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -1400,6 +1400,12 @@ function createCanvas(){
   canvas.findTarget = function(e, skipGroup){
     const t = fabricFind.call(this, e, skipGroup), act = this._activeObject;
     if(this.skipTargetFind) return t;
+    // a layer picked in the Layers list is "pinned": while the pointer is over it, it is the one grabbed, even when something sits on top of it.
+    // Alt-click gets the normal topmost pick; clicking anywhere it is not (or picking something else) lets go of the pin.
+    if(this.__pin && act === this.__pin && !e.altKey){
+      const pt = this.getPointer(e, true);
+      if(this._searchPossibleTargets([act], pt) === act || (act._findTargetCorner && act._findTargetCorner(pt, /touch/.test(e.type || '')))) return act;
+    }
     const multi = act && act.type === 'activeSelection', cutter = t && t !== act && MS.fx && MS.fx.isCutter && MS.fx.isCutter(t);
     if(!(multi && t === act) && !cutter) return t;
     const pt = this.getPointer(e, true), members = multi ? act._objects : [act];
@@ -1410,6 +1416,8 @@ function createCanvas(){
     if(!hit) return null;
     return multi && members.includes(hit) ? act : hit;
   };
+  const unpin = ()=>{ if(canvas.__pin && canvas._activeObject !== canvas.__pin) canvas.__pin = null; };
+  canvas.on('selection:updated', unpin); canvas.on('selection:cleared', ()=>{ canvas.__pin = null; });
   wireCanvasEvents();
   wirePanZoom();
   new ResizeObserver(()=>{ onResize(); }).observe(vp);
@@ -4014,7 +4022,7 @@ function paintLayers(){
       if(e.shiftKey || e.ctrlKey || e.metaKey){
         const cur = c.getActiveObjects().filter(o=>o !== obj); if(!sel.has(obj)) cur.push(obj);
         MS.ops.select(cur);
-      } else MS.ops.select([obj]);
+      } else { MS.ops.select([obj]); c.__pin = obj; }   // pinned: grab it on the canvas even if covered (Alt-click = normal pick)
     });
     row.addEventListener('contextmenu', e=>{ e.preventDefault(); if(!sel.has(obj)) MS.ops.select([obj]); MS.contextMenu(e.clientX, e.clientY); });
     row.querySelector('.layer-grip').addEventListener('mousedown', e=> startLayerDrag(e, obj));
