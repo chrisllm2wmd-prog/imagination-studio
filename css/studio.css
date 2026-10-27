@@ -582,4 +582,3 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 #splash{cursor:default;} #splash:has(.sp-go){cursor:pointer;}
 @media (prefers-reduced-motion:reduce){#splash .sp-load i{animation:none;width:100%;}#splash .sp-ver,#splash .sp-bottom{animation:none;}}
 
-.fxclr{margin-left:8px;font-size:11px;color:var(--mut);}

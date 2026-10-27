@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.05 beta';
+window.IMAGINATION_VERSION = '4.08 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -550,6 +550,7 @@ const P = {
   newdoc:'M6 3h8l5 5v13H6zM14 3v5h5M12 12v6M9 15h6',
   chevd:'M6 9l6 6 6-6',
   chevr:'M9 6l6 6-6 6',
+  chevl:'M15 6l-6 6 6 6',
   chevu:'M6 15l6-6 6 6',
   plus:'M12 5v14M5 12h14',
   minus:'M5 12h14',
@@ -3599,7 +3600,7 @@ function wireProps(){
   $('#propTextColor').addEventListener('input', e=>{ if(syncing) return; const pf = $('#propFill'); pf.value = e.target.value; pf.dispatchEvent(new Event('input', { bubbles:true })); $('#propTextColorFade').style.display = 'none'; });
   $('#propTextColor').addEventListener('change', e=> MS.noteColor(e.target.value));
   $('#propTextShadowBtn').addEventListener('click', e=> MS.fx.open(e.currentTarget));
-  $('#propFillNone').addEventListener('change', e=>{ S.noFill = e.target.checked; eachObj(o=>{ o.set('fill', e.target.checked ? '' : (S.fill || '#222222')); }); done('Fill', true); });
+  $('#propFillNone').addEventListener('change', e=>{ S.noFill = e.target.checked; eachObj(o=>{ o.set('fill', e.target.checked ? '' : (S.fill || '#222222')); if(!o._objects && o.type !== 'image') MS.fx.setFillCut(o, e.target.checked); }); MS.fx.refresh && MS.fx.refresh(); done('Fill', true); });
   $('#propStroke').addEventListener('input', e=>{ S.stroke = e.target.value; S.noStroke = false; $('#propStrokeNone').checked = false; eachObj(o=>{ o.set({ stroke:e.target.value }); if(!o.strokeWidth) o.set('strokeWidth', S.strokeW || 2); }); MS.tools.syncSwatches(); done('Stroke colour'); });
   $('#propStroke').addEventListener('change', e=> MS.noteColor(e.target.value));
   $('#propStrokeNone').addEventListener('change', e=>{ S.noStroke = e.target.checked; eachObj(o=> o.set('stroke', e.target.checked ? null : (S.stroke || '#000000'))); done('Stroke', true); });
@@ -5054,8 +5055,7 @@ function applyDistress(o, ds){
    Stored per object in __fx.stack = { shadow:{on,color,alpha,blur,depth,angle}, glow:{on,color,size,bright}, outline:{on,color,width} }.
    They are painted by us (not Fabric's single native shadow): shadow first, then glow, then outline, then the element itself on top,
    so the glow can never separate from, or sit in front of, its source. */
-const CLEAR = 'rgba(0,0,0,0)', clr = c=> c === 'none' ? CLEAR : c;   // a colour set to 'none' is the Clear option: it draws nothing
-function rgba(hex, a){ if(hex === 'none') return CLEAR; const c = MS.hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${a})`; }
+function rgba(hex, a){ const c = MS.hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${a})`; }
 function eachTarget(fn){ cv().getActiveObjects().forEach(o=>{ fn(o); o.dirty = true; MS.dirtyObj(o); }); cv().requestRenderAll(); }
 function objSize(o){ const b = o.getBoundingRect(true, true); return Math.max(b.width, b.height, 20); }
 const mx = (v, b)=> typeof v === 'function' ? v(b) : v;
@@ -5081,8 +5081,10 @@ Object.assign(FXDEF, {
     ctl:[['color', 'Colour A'], ['color2', 'Colour B'], ['offset', 'Offset', 0, b=> Math.max(300, b * .6), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°'], ['alpha', 'Opacity', 0, 100, 1, '%']] },
   ring2:{ label:'Double outline', icon:'stroke', def:b=>({ on:true, color:'#ffffff', color2:'#000000', gap:Math.max(2, Math.round(b * .012)), width:Math.max(3, Math.round(b * .02)) }),
     ctl:[['color', 'Outer colour'], ['color2', 'Inner colour'], ['gap', 'Inner width', 1, b=> Math.max(120, b * .3), 1, 'px'], ['width', 'Outer width', 1, b=> Math.max(200, b * .45), 1, 'px']] },
+  cutout:{ label:'Pass through', icon:'eraser', def:()=>({ on:true, layers:1, strength:100 }),
+    ctl:[['layers', 'Layers cut (0 = all)', 0, 20, 1, ''], ['strength', 'Strength', 0, 100, 1, '%']] },
 });
-const KINDS = ['shadow', 'glow', 'outline', 'extrude', 'longshadow', 'echo', 'neon', 'split', 'ring2'];
+const KINDS = ['shadow', 'glow', 'outline', 'extrude', 'longshadow', 'echo', 'neon', 'split', 'ring2', 'cutout'];
 // one-click looks: each switches every other effect off and sets the listed ones (b = the element's size)
 const LOOKS = {
   'Sticker':{ outline:b=>({ color:'#ffffff', width:Math.round(b * .035) }), shadow:b=>({ color:'#000000', alpha:55, blur:Math.round(b * .03), depth:Math.round(b * .02), angle:60 }) },
@@ -5133,14 +5135,14 @@ function underlay(o, ctx){
   ctx.save(); o.transform(ctx); o._setOpacity(ctx); o.__fxPass = true;
   try{
     const plain = ()=> o.drawObject(ctx, false);
-    const sil = ol ? ()=> withProps(o, { fill:clr(ol.color), stroke:clr(ol.color), strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
+    const sil = ol ? ()=> withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
     if(sh){ const a = sh.angle * Math.PI / 180; shadowOnly(o, ctx, rgba(sh.color, clamp(sh.alpha, 0, 100) / 100), sh.blur, Math.cos(a) * sh.depth, Math.sin(a) * sh.depth, sil); }
     if(gl){
       const b = Math.max(0, gl.bright) / 100, reps = 1 + Math.floor(b);
       // tight + medium + wide halos stacked: the bright part always hugs the element, however large the glow
       [[.12, .95], [.35, .8], [1, .7]].forEach(([f, w])=>{ for(let i = 0; i < reps; i++) shadowOnly(o, ctx, rgba(gl.color, clamp(b * w, 0, 1)), Math.max(1, gl.size * f), 0, 0, sil); });
     }
-    if(ol) withProps(o, { fill:clr(ol.color), stroke:clr(ol.color), strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+    if(ol) withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   } finally { o.__fxPass = false; ctx.restore(); }
 }
 // draws fn() with the element moved by (dx, dy) canvas px and its opacity scaled by alpha
@@ -5151,7 +5153,7 @@ function atOffset(o, ctx, dx, dy, alpha, fn){
 function underlayExtra(o, ctx){
   const st = stackOf(o); if(!st) return;
   const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
-  const solid = (col, sw)=> ()=> withProps(o, { fill:clr(col), stroke:clr(col), strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+  const solid = (col, sw)=> ()=> withProps(o, { fill:col, stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
   o.__fxPass = true;
   try{
@@ -5179,6 +5181,46 @@ function underlayExtra(o, ctx){
   };
 })();
 
+/* Pass through (cut-out): an element with it on is not drawn. It erases its own shape out of the `layers` visible layers directly
+   beneath it (0 = every layer below); strength = how much it removes. Each affected layer is painted to a scratch canvas, the cutters
+   are erased from that, and the result is laid onto the page, so layers outside the range are untouched. */
+// fillOnly = set by the Fill > None box: the element still draws (its outline) but its empty fill area cuts through
+const cutOf = o=> { const s = o && o.__fx && o.__fx.stack, c = s && s.cutout && s.cutout.on ? s.cutout : null; return c && c.fillOnly && !o._objects && o.fill ? null : c; };
+const hidden = o=> { const c = cutOf(o); return !!c && !c.fillOnly; };
+let scratch = null;
+function cuttersFor(o){
+  const list = o.canvas && o.canvas._objects; if(!list || o.group) return null;
+  const i = list.indexOf(o); if(i < 0) return null; let out = null;
+  for(let j = i + 1; j < list.length; j++){
+    const k = list[j], cut = cutOf(k); if(!cut || !k.visible) continue;
+    const n = Math.max(0, Math.round(+cut.layers || 0)); let rank = 0;   // visible, non-cutting layers from o up to just below k
+    for(let m = j - 1; m >= i; m--){ const x = list[m]; if(x.visible && !hidden(x)) rank++; }
+    if(n === 0 || rank <= n) (out = out || []).push([k, cut]);
+  }
+  return out;
+}
+(function(){
+  const baseRender = fabric.Object.prototype.render;
+  fabric.Object.prototype.render = function(ctx){
+    if(hidden(this)) return;
+    const cuts = !this.__cutPass && this.canvas ? cuttersFor(this) : null;
+    if(!cuts) return baseRender.call(this, ctx);
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    if(!scratch) scratch = document.createElement('canvas');
+    if(scratch.width !== W || scratch.height !== H){ scratch.width = W; scratch.height = H; }
+    const sc = scratch.getContext('2d'), blend = this.globalCompositeOperation;
+    sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, W, H); sc.setTransform(ctx.getTransform());
+    this.globalCompositeOperation = 'source-over'; this.__cutPass = true;
+    try{ baseRender.call(this, sc); } finally { this.globalCompositeOperation = blend; this.__cutPass = false; }
+    cuts.forEach(([k, cut])=>{
+      sc.save(); sc.globalCompositeOperation = 'destination-out'; sc.globalAlpha = Math.max(0, Math.min(1, (cut.strength === undefined ? 100 : cut.strength) / 100));
+      k.transform(sc); k.__fxPass = true;
+      try{ withProps(k, cut.fillOnly ? { fill:'#000', stroke:null, strokeWidth:0 } : { fill:'#000', stroke:k.stroke ? '#000' : k.stroke }, ()=> k.drawObject(sc, false)); } finally { k.__fxPass = false; sc.restore(); }
+    });
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = blend || 'source-over'; ctx.drawImage(scratch, 0, 0); ctx.restore();
+  };
+})();
+
 /* ---- the controls (one builder, used in the Effects section and in the pop-up beside the toolbar) ---- */
 const builds = [];
 let ct = null;
@@ -5202,7 +5244,7 @@ function setParam(k, p, v){
 function block(k){
   const d = FXDEF[k];
   return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> /^color/.test(p)
-    ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span><label class="chk fxclr" data-tip="Clear: no colour for this part"><input type="checkbox" data-clear="${p}"> Clear</label></div>`
+    ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span></div>`
     : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + `</div></div>`;
 }
 function refresh(root){
@@ -5214,7 +5256,7 @@ function refresh(root){
     const b = root.querySelector(`.fxb[data-fx="${k}"]`), p = Object.assign(FXDEF[k].def(base), st[k] || {}), on = !!(st[k] && st[k].on);
     b.querySelector('[data-on]').checked = on; b.querySelector('.fxbody').style.display = on ? '' : 'none';
     FXDEF[k].ctl.forEach(([name, , lo, hi])=>{
-      if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); const none = p[name] === 'none', ck = b.querySelector(`[data-clear="${name}"]`); ck.checked = none; e.style.opacity = none ? .3 : ''; if(!none && document.activeElement !== e) e.value = p[name]; return; }
+      if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); if(document.activeElement !== e) e.value = p[name]; return; }
       const r = b.querySelector(`[data-p="${name}"]`), n = b.querySelector(`[data-n="${name}"]`); r.max = Math.max(mx(hi, base), +p[name]);
       if(document.activeElement !== r) r.value = p[name]; if(document.activeElement !== n) n.value = Math.round(p[name]); MS.fillRange(r);
     });
@@ -5229,10 +5271,9 @@ MS.fx.build = function(root){
     if(e.target.matches('.fxLook')){ const L = LOOKS[e.target.value]; e.target.value = ''; if(!L) return; unifyIfAsked(root);
       eachTarget(o=>{ migrate(o); const st = ensureStack(o), b = objSize(o); KINDS.forEach(k=>{ if(st[k]) st[k] = Object.assign({}, st[k], { on:false }); }); Object.keys(L).forEach(k=>{ st[k] = Object.assign(FXDEF[k].def(b), L[k](b), { on:true }); }); });
       commit('Look', true); return; }
-    const clrBox = e.target.closest('[data-clear]'); if(clrBox){ const b = clrBox.closest('.fxb'), nm = clrBox.dataset.clear, ci = b.querySelector(`[data-p="${nm}"]`); setParam(b.dataset.fx, nm, clrBox.checked ? 'none' : ci.value); return; }
     const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(/^color/.test(e.target.dataset.p || '')) MS.noteColor && MS.noteColor(e.target.value); });
   root.addEventListener('input', e=>{
-    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]') || t.matches('[data-clear]')) return;
+    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]')) return;
     const p = t.dataset.p || t.dataset.n, v = t.type === 'color' ? t.value : +t.value; if(t.type !== 'color' && !isFinite(v)) return;
     const r = b.querySelector(`[data-p="${p}"]`), n = b.querySelector(`[data-n="${p}"]`);
     if(t.dataset.n){ if(+t.value > +r.max) r.max = t.value; r.value = t.value; MS.fillRange(r); } else if(n){ n.value = Math.round(v); MS.fillRange(r); }
@@ -5273,6 +5314,13 @@ function wire(){
   on('fxDistressDice', 'click', ()=>{ $('#fxDistressSeed').value = 1 + Math.floor(Math.random() * 998); MS.fillRange($('#fxDistressSeed')); if($('#fxDistressKind').value){ eachTarget(o=> applyDistress(o, readDs())); commit('Distress', true); } });
 }
 
+// Fill > None: the empty fill becomes a cut-out through the layer beneath (adjust in the Pass through effect)
+MS.fx.setFillCut = function(o, on){
+  migrate(o); const st = ensureStack(o), cur = st.cutout;
+  if(on){ if(!cur || !cur.on) st.cutout = { on:true, layers:1, strength:100, fillOnly:true }; }
+  else if(cur && cur.fillOnly) delete st.cutout;
+  o.dirty = true;
+};
 Object.assign(MS.fx, {
   quick(kind){
     if(!cv().getActiveObject()){ MS.toast('Select something first.'); return; }
