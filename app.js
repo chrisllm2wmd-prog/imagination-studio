@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.11 beta';
+window.IMAGINATION_VERSION = '4.12 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -5224,7 +5224,11 @@ function cuttersFor(o){
     let rank = -1;   // visible, non-hidden layers from o up to just below k (computed on first need)
     const reach = n=>{ n = Math.max(0, Math.round(+n || 0)); if(n === 0) return true; if(rank < 0){ rank = 0; for(let m = j - 1; m >= i; m--){ const x = list[m]; if(x.visible && !hidden(x)) rank++; } } return rank <= n; };
     const cut = cutOf(k); if(cut && reach(cut.layers)) (out = out || []).push([k, cut, null]);
-    KINDS.forEach(kind=>{ const e = st[kind]; if(kind !== 'cutout' && e && e.on && e.cut && !hidden(k) && reach(e.cutLayers === undefined ? 1 : e.cutLayers)) (out = out || []).push([k, { strength:100 }, kind]); });   // an effect set to Pass through
+    KINDS.forEach(kind=>{   // an effect set to Pass through: cuts the layers in range, shows normally on the ones below (unless 'Show on layers below' is off)
+      const e = st[kind]; if(kind === 'cutout' || !e || !e.on || !e.cut || hidden(k)) return;
+      if(reach(e.cutLayers === undefined ? 1 : e.cutLayers)) (out = out || []).push([k, { strength:100 }, kind, 'cut']);
+      else if(e.cutShow !== false) (out = out || []).push([k, { strength:100 }, kind, 'show']);
+    });
   }
   return out;
 }
@@ -5241,9 +5245,9 @@ function cuttersFor(o){
     sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, W, H); sc.setTransform(ctx.getTransform());
     this.globalCompositeOperation = 'source-over'; this.__cutPass = true;
     try{ baseRender.call(this, sc); } finally { this.globalCompositeOperation = blend; this.__cutPass = false; }
-    cuts.forEach(([k, cut, kind])=>{
-      if(kind){   // only that effect's painted area (soft edges included) is erased; the element itself stays
-        sc.save(); sc.globalCompositeOperation = 'destination-out'; sc.globalAlpha = 1; k.__cutOnly = kind;
+    cuts.forEach(([k, cut, kind, how])=>{
+      if(kind){   // 'cut': that effect's painted area (soft edges included) is erased; 'show': it is painted normally, but only over this layer's own pixels
+        sc.save(); sc.globalCompositeOperation = how === 'show' ? 'source-atop' : 'destination-out'; sc.globalAlpha = 1; k.__cutOnly = kind;
         try{ underlayExtra(k, sc); underlay(k, sc); } finally { k.__cutOnly = null; sc.restore(); }
         return;
       }
@@ -5279,7 +5283,7 @@ function block(k){
   const d = FXDEF[k];
   return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> /^color/.test(p)
     ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span></div>`
-    : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + (k === 'cutout' ? '' : `<label class="chk"><input type="checkbox" data-cut> Pass through (cut lower layers)</label><div class="r fxcutrow" style="display:none"><label>Layers cut (0 = all)</label><input type="range" data-p="cutLayers" min="0" max="20" step="1"><div class="f" style="width:70px"><input type="number" data-n="cutLayers" min="0" step="1"></div></div>`) + `</div></div>`;
+    : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + (k === 'cutout' ? '' : `<label class="chk"><input type="checkbox" data-cut> Pass through (cut lower layers)</label><div class="r fxcutrow" style="display:none"><label class="chk" style="flex-basis:100%"><input type="checkbox" data-show> Show the effect normally on layers below the cut</label></div><div class="r fxcutrow" style="display:none"><label>Layers cut (0 = all)</label><input type="range" data-p="cutLayers" min="0" max="20" step="1"><div class="f" style="width:70px"><input type="number" data-n="cutLayers" min="0" step="1"></div></div>`) + `</div></div>`;
 }
 function refresh(root){
   const act = cv() && cv().getActiveObjects(), o = act && act[0]; if(!o){ root.classList.add('off'); return; } root.classList.remove('off');
@@ -5289,8 +5293,8 @@ function refresh(root){
   KINDS.forEach(k=>{
     const b = root.querySelector(`.fxb[data-fx="${k}"]`), p = Object.assign(FXDEF[k].def(base), st[k] || {}), on = !!(st[k] && st[k].on);
     b.querySelector('[data-on]').checked = on; b.querySelector('.fxbody').style.display = on ? '' : 'none';
-    if(k !== 'cutout'){ const cb = b.querySelector('[data-cut]'), row = b.querySelector('.fxcutrow'), rr = row.querySelector('[data-p]'), nn = row.querySelector('[data-n]'), cl = p.cutLayers === undefined ? 1 : p.cutLayers;
-      cb.checked = !!p.cut; row.style.display = p.cut ? '' : 'none'; if(document.activeElement !== rr) rr.value = cl; if(document.activeElement !== nn) nn.value = Math.round(cl); MS.fillRange(rr); }
+    if(k !== 'cutout'){ const cb = b.querySelector('[data-cut]'), rows = b.querySelectorAll('.fxcutrow'), row = rows[1], rr = row.querySelector('[data-p]'), nn = row.querySelector('[data-n]'), cl = p.cutLayers === undefined ? 1 : p.cutLayers;
+      cb.checked = !!p.cut; rows.forEach(x=> x.style.display = p.cut ? '' : 'none'); b.querySelector('[data-show]').checked = p.cutShow !== false; if(document.activeElement !== rr) rr.value = cl; if(document.activeElement !== nn) nn.value = Math.round(cl); MS.fillRange(rr); }
     FXDEF[k].ctl.forEach(([name, , lo, hi])=>{
       if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); if(document.activeElement !== e) e.value = p[name]; return; }
       const r = b.querySelector(`[data-p="${name}"]`), n = b.querySelector(`[data-n="${name}"]`); r.max = Math.max(mx(hi, base), +p[name]);
@@ -5307,10 +5311,11 @@ MS.fx.build = function(root){
     if(e.target.matches('.fxLook')){ const L = LOOKS[e.target.value]; e.target.value = ''; if(!L) return; unifyIfAsked(root);
       eachTarget(o=>{ migrate(o); const st = ensureStack(o), b = objSize(o); KINDS.forEach(k=>{ if(st[k]) st[k] = Object.assign({}, st[k], { on:false }); }); Object.keys(L).forEach(k=>{ st[k] = Object.assign(FXDEF[k].def(b), L[k](b), { on:true }); }); });
       commit('Look', true); return; }
+    const showBox = e.target.closest('[data-show]'); if(showBox){ setParam(showBox.closest('.fxb').dataset.fx, 'cutShow', showBox.checked); return; }
     const cutBox = e.target.closest('[data-cut]'); if(cutBox){ setParam(cutBox.closest('.fxb').dataset.fx, 'cut', cutBox.checked); refreshAll(); return; }
     const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(/^color/.test(e.target.dataset.p || '')) MS.noteColor && MS.noteColor(e.target.value); });
   root.addEventListener('input', e=>{
-    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]') || t.matches('[data-cut]')) return;
+    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]') || t.matches('[data-cut]') || t.matches('[data-show]')) return;
     const p = t.dataset.p || t.dataset.n, v = t.type === 'color' ? t.value : +t.value; if(t.type !== 'color' && !isFinite(v)) return;
     const r = b.querySelector(`[data-p="${p}"]`), n = b.querySelector(`[data-n="${p}"]`);
     if(t.dataset.n){ if(+t.value > +r.max) r.max = t.value; r.value = t.value; MS.fillRange(r); } else if(n){ n.value = Math.round(v); MS.fillRange(r); }
