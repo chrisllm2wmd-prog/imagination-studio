@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.08 beta';
+window.IMAGINATION_VERSION = '4.10 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -1393,6 +1393,23 @@ function createCanvas(){
   });
   const vp = $('#vp');
   canvas.setDimensions({ width: vp.clientWidth || 800, height: vp.clientHeight || 600 });
+  // Hit-testing: fabric lets a multi-selection swallow every click inside its box, so after picking layers in the Layers list nothing
+  // else could be grabbed until you clicked empty space. Here the topmost thing actually under the pointer wins; a selection only
+  // keeps the click when that thing is one of its own members (or a handle was hit). Invisible Pass-through cutters never catch clicks.
+  const fabricFind = canvas.findTarget;
+  canvas.findTarget = function(e, skipGroup){
+    const t = fabricFind.call(this, e, skipGroup), act = this._activeObject;
+    if(this.skipTargetFind) return t;
+    const multi = act && act.type === 'activeSelection', cutter = t && t !== act && MS.fx && MS.fx.isCutter && MS.fx.isCutter(t);
+    if(!(multi && t === act) && !cutter) return t;
+    const pt = this.getPointer(e, true), members = multi ? act._objects : [act];
+    if(multi && act._findTargetCorner(pt, /touch/.test(e.type || ''))) return t;
+    const list = this._objects.filter(o=> !(MS.fx && MS.fx.isCutter && MS.fx.isCutter(o)) || members.includes(o));
+    this.targets = [];
+    const hit = this._searchPossibleTargets(list, pt);
+    if(!hit) return null;
+    return multi && members.includes(hit) ? act : hit;
+  };
   wireCanvasEvents();
   wirePanZoom();
   new ResizeObserver(()=>{ onResize(); }).observe(vp);
@@ -5101,6 +5118,8 @@ const LOOKS = {
   'Stacked 3D + shadow':{ extrude:b=>({ color:'#222a44', depth:Math.round(b * .07), angle:60 }), shadow:b=>({ color:'#000000', alpha:50, blur:Math.round(b * .06), depth:Math.round(b * .09), angle:60 }) },
 };
 const stackOf = o=> (o && o.__fx && o.__fx.stack) || null;
+// what the painter sees: normal drawing skips effects set to Pass through; the cut pass (o.__cutOnly = kind) paints only that one
+const fxStack = o=>{ const s = stackOf(o); if(!s) return null; const out = {}; KINDS.forEach(k=>{ const e = s[k]; if(!e || k === 'cutout') return; if(o.__cutOnly ? (o.__cutOnly === k && e.on && e.cut) : !e.cut) out[k] = e; }); return out; };
 const anyOn = o=> { const s = stackOf(o); return !!s && KINDS.some(k=> s[k] && s[k].on); };
 function ensureStack(o){ o.__fx = Object.assign({}, o.__fx); o.__fx.stack = Object.assign({}, o.__fx.stack); return o.__fx.stack; }
 // older files keep a single native shadow / glow: turn it into the new stack the first time it is touched
@@ -5130,7 +5149,7 @@ function withProps(o, props, fn){
   try{ fn(); } finally { list.forEach(([x, old])=>{ Object.assign(x, old); x.dirty = true; }); }
 }
 function underlay(o, ctx){
-  const st = stackOf(o); if(!st || !o.canvas) return;
+  const st = fxStack(o); if(!st || !o.canvas) return;
   const sh = st.shadow && st.shadow.on ? st.shadow : null, gl = st.glow && st.glow.on ? st.glow : null, ol = st.outline && st.outline.on && o.type !== 'image' ? st.outline : null;
   ctx.save(); o.transform(ctx); o._setOpacity(ctx); o.__fxPass = true;
   try{
@@ -5151,7 +5170,7 @@ function atOffset(o, ctx, dx, dy, alpha, fn){
   try{ fn(); } finally { ctx.restore(); }
 }
 function underlayExtra(o, ctx){
-  const st = stackOf(o); if(!st) return;
+  const st = fxStack(o); if(!st) return;
   const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
   const solid = (col, sw)=> ()=> withProps(o, { fill:col, stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
@@ -5192,10 +5211,12 @@ function cuttersFor(o){
   const list = o.canvas && o.canvas._objects; if(!list || o.group) return null;
   const i = list.indexOf(o); if(i < 0) return null; let out = null;
   for(let j = i + 1; j < list.length; j++){
-    const k = list[j], cut = cutOf(k); if(!cut || !k.visible) continue;
-    const n = Math.max(0, Math.round(+cut.layers || 0)); let rank = 0;   // visible, non-cutting layers from o up to just below k
-    for(let m = j - 1; m >= i; m--){ const x = list[m]; if(x.visible && !hidden(x)) rank++; }
-    if(n === 0 || rank <= n) (out = out || []).push([k, cut]);
+    const k = list[j]; if(!k.visible) continue;
+    const st = k.__fx && k.__fx.stack; if(!st) continue;
+    let rank = -1;   // visible, non-hidden layers from o up to just below k (computed on first need)
+    const reach = n=>{ n = Math.max(0, Math.round(+n || 0)); if(n === 0) return true; if(rank < 0){ rank = 0; for(let m = j - 1; m >= i; m--){ const x = list[m]; if(x.visible && !hidden(x)) rank++; } } return rank <= n; };
+    const cut = cutOf(k); if(cut && reach(cut.layers)) (out = out || []).push([k, cut, null]);
+    KINDS.forEach(kind=>{ const e = st[kind]; if(kind !== 'cutout' && e && e.on && e.cut && !hidden(k) && reach(e.cutLayers === undefined ? 1 : e.cutLayers)) (out = out || []).push([k, { strength:100 }, kind]); });   // an effect set to Pass through
   }
   return out;
 }
@@ -5212,7 +5233,12 @@ function cuttersFor(o){
     sc.setTransform(1, 0, 0, 1, 0, 0); sc.clearRect(0, 0, W, H); sc.setTransform(ctx.getTransform());
     this.globalCompositeOperation = 'source-over'; this.__cutPass = true;
     try{ baseRender.call(this, sc); } finally { this.globalCompositeOperation = blend; this.__cutPass = false; }
-    cuts.forEach(([k, cut])=>{
+    cuts.forEach(([k, cut, kind])=>{
+      if(kind){   // only that effect's painted area (soft edges included) is erased; the element itself stays
+        sc.save(); sc.globalCompositeOperation = 'destination-out'; sc.globalAlpha = 1; k.__cutOnly = kind;
+        try{ underlayExtra(k, sc); underlay(k, sc); } finally { k.__cutOnly = null; sc.restore(); }
+        return;
+      }
       sc.save(); sc.globalCompositeOperation = 'destination-out'; sc.globalAlpha = Math.max(0, Math.min(1, (cut.strength === undefined ? 100 : cut.strength) / 100));
       k.transform(sc); k.__fxPass = true;
       try{ withProps(k, cut.fillOnly ? { fill:'#000', stroke:null, strokeWidth:0 } : { fill:'#000', stroke:k.stroke ? '#000' : k.stroke }, ()=> k.drawObject(sc, false)); } finally { k.__fxPass = false; sc.restore(); }
@@ -5245,7 +5271,7 @@ function block(k){
   const d = FXDEF[k];
   return `<div class="fxb" data-fx="${k}"><label class="chk fxhead"><input type="checkbox" data-on> ${MS.icon(d.icon)} <b>${d.label}</b></label><div class="fxbody">` + d.ctl.map(([p, label, lo, hi, step, unit])=> /^color/.test(p)
     ? `<div class="r"><label>${label}</label><span class="swatch-in"><input type="color" data-p="${p}" value="#000000"></span></div>`
-    : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + `</div></div>`;
+    : `<div class="r"><label>${label}</label><input type="range" data-p="${p}" min="${lo}" max="${typeof hi === 'function' ? 300 : hi}" step="${step}"><div class="f" style="width:70px"><input type="number" data-n="${p}" min="${lo}" step="${step}"><em>${unit}</em></div></div>`).join('') + (k === 'cutout' ? '' : `<label class="chk"><input type="checkbox" data-cut> Pass through (cut lower layers)</label><div class="r fxcutrow" style="display:none"><label>Layers cut (0 = all)</label><input type="range" data-p="cutLayers" min="0" max="20" step="1"><div class="f" style="width:70px"><input type="number" data-n="cutLayers" min="0" step="1"></div></div>`) + `</div></div>`;
 }
 function refresh(root){
   const act = cv() && cv().getActiveObjects(), o = act && act[0]; if(!o){ root.classList.add('off'); return; } root.classList.remove('off');
@@ -5255,6 +5281,8 @@ function refresh(root){
   KINDS.forEach(k=>{
     const b = root.querySelector(`.fxb[data-fx="${k}"]`), p = Object.assign(FXDEF[k].def(base), st[k] || {}), on = !!(st[k] && st[k].on);
     b.querySelector('[data-on]').checked = on; b.querySelector('.fxbody').style.display = on ? '' : 'none';
+    if(k !== 'cutout'){ const cb = b.querySelector('[data-cut]'), row = b.querySelector('.fxcutrow'), rr = row.querySelector('[data-p]'), nn = row.querySelector('[data-n]'), cl = p.cutLayers === undefined ? 1 : p.cutLayers;
+      cb.checked = !!p.cut; row.style.display = p.cut ? '' : 'none'; if(document.activeElement !== rr) rr.value = cl; if(document.activeElement !== nn) nn.value = Math.round(cl); MS.fillRange(rr); }
     FXDEF[k].ctl.forEach(([name, , lo, hi])=>{
       if(/^color/.test(name)){ const e = b.querySelector(`[data-p="${name}"]`); if(document.activeElement !== e) e.value = p[name]; return; }
       const r = b.querySelector(`[data-p="${name}"]`), n = b.querySelector(`[data-n="${name}"]`); r.max = Math.max(mx(hi, base), +p[name]);
@@ -5271,9 +5299,10 @@ MS.fx.build = function(root){
     if(e.target.matches('.fxLook')){ const L = LOOKS[e.target.value]; e.target.value = ''; if(!L) return; unifyIfAsked(root);
       eachTarget(o=>{ migrate(o); const st = ensureStack(o), b = objSize(o); KINDS.forEach(k=>{ if(st[k]) st[k] = Object.assign({}, st[k], { on:false }); }); Object.keys(L).forEach(k=>{ st[k] = Object.assign(FXDEF[k].def(b), L[k](b), { on:true }); }); });
       commit('Look', true); return; }
+    const cutBox = e.target.closest('[data-cut]'); if(cutBox){ setParam(cutBox.closest('.fxb').dataset.fx, 'cut', cutBox.checked); refreshAll(); return; }
     const on = e.target.closest('[data-on]'); if(on){ setKind(on.closest('.fxb').dataset.fx, on.checked, root); return; } if(/^color/.test(e.target.dataset.p || '')) MS.noteColor && MS.noteColor(e.target.value); });
   root.addEventListener('input', e=>{
-    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]')) return;
+    const t = e.target, b = t.closest('.fxb'); if(!b || t.matches('[data-on]') || t.matches('[data-cut]')) return;
     const p = t.dataset.p || t.dataset.n, v = t.type === 'color' ? t.value : +t.value; if(t.type !== 'color' && !isFinite(v)) return;
     const r = b.querySelector(`[data-p="${p}"]`), n = b.querySelector(`[data-n="${p}"]`);
     if(t.dataset.n){ if(+t.value > +r.max) r.max = t.value; r.value = t.value; MS.fillRange(r); } else if(n){ n.value = Math.round(v); MS.fillRange(r); }
@@ -5315,6 +5344,7 @@ function wire(){
 }
 
 // Fill > None: the empty fill becomes a cut-out through the layer beneath (adjust in the Pass through effect)
+MS.fx.isCutter = hidden;   // an invisible Pass-through element (never catches clicks on the canvas)
 MS.fx.setFillCut = function(o, on){
   migrate(o); const st = ensureStack(o), cur = st.cutout;
   if(on){ if(!cur || !cur.on) st.cutout = { on:true, layers:1, strength:100, fillOnly:true }; }
@@ -8778,13 +8808,34 @@ let reloading = false, updating = false;
 // reload ONLY when the visitor has just clicked "Update now" - never on a first visit, when the offline copy quietly takes over the page
 navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(!updating || reloading) return; reloading = true; try{ sessionStorage.setItem('ms.skipSplash', '1'); }catch(e){} location.reload(); });
 function updateReady(w){ bar('A new version of Imagination Studio is ready.', [['Update now', ()=>{ updating = true; w.postMessage('skipWaiting'); }], ['Later', hide]]); }
+/* ---------- "Checking for updates" spinner: a ring whose arc swings back and forth ---------- */
+let checkNow = null, busy = false;
+function spinner(text, done){
+  if(!document.getElementById('pwaSpinCss')){ const st = document.createElement('style'); st.id = 'pwaSpinCss'; st.textContent = '@keyframes pwaSwing{0%{transform:rotate(-135deg)}50%{transform:rotate(135deg)}100%{transform:rotate(-135deg)}} #pwaBar .pwaring{width:18px;height:18px;flex:none;animation:pwaSwing 1.3s ease-in-out infinite} @media (prefers-reduced-motion:reduce){#pwaBar .pwaring{animation-duration:3s}}'; document.head.appendChild(st); }
+  const mark = done ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6fe3a1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12l5 5 9-10"/></svg>'
+    : '<svg class="pwaring" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke="#5b8cff33"/><circle cx="12" cy="12" r="9" stroke="#8fb0ff" stroke-dasharray="21 57"/></svg>';
+  const b = bar(text); b.insertAdjacentHTML('afterbegin', mark); return b;
+}
+function checkForUpdates(reg){
+  if(busy) return; busy = true; spinner('Checking for updates…');
+  const t0 = Date.now(), finish = fn=> setTimeout(()=>{ busy = false; fn(); }, Math.max(0, 900 - (Date.now() - t0)));   // never a flash
+  reg.update().then(()=>{
+    if(reg.waiting && navigator.serviceWorker.controller) return finish(()=> updateReady(reg.waiting));
+    if(reg.installing){ spinner('Downloading the update…'); busy = false; return; }   // the statechange handler swaps in the Update now bar
+    finish(()=>{ spinner('You have the latest version.', true); setTimeout(hide, 2200); });
+  }).catch(()=> finish(()=>{ bar('Could not check for updates (offline?).'); setTimeout(hide, 3000); }));
+}
+MS.checkUpdates = ()=>{ if(checkNow) checkNow(); };
+MS.addCommand && MS.addCommand({ title:'Check for updates', cat:'Help', kw:'update version new latest refresh', run:()=> MS.checkUpdates() });
 function startSW(){
   navigator.serviceWorker.register('sw.js').then(reg=>{
     const c = navigator.connection || {}, polite = !(c.saveData || /(^|-)2g$/.test(c.effectiveType || ''));   // skip the big font pack on data-saver / very slow connections
     navigator.serviceWorker.ready.then(r=>{ if(r.active && polite) setTimeout(()=> r.active.postMessage('cacheFonts'), 30000); });   // long after the app has opened
     if(reg.waiting && navigator.serviceWorker.controller) updateReady(reg.waiting);
     reg.addEventListener('updatefound', ()=>{ const w = reg.installing; if(!w) return; w.addEventListener('statechange', ()=>{ if(w.state === 'installed' && navigator.serviceWorker.controller) updateReady(w); }); });
-    setInterval(()=>{ reg.update().catch(()=>{}); }, 60 * 60 * 1000);   // look for a new version hourly while the app stays open
+    setInterval(()=>{ reg.update().catch(()=>{}); }, 60 * 60 * 1000);   // look for a new version hourly while the app stays open (quietly)
+    checkNow = ()=> checkForUpdates(reg);
+    if(!reg.waiting) checkForUpdates(reg);   // once at start-up, with the spinner
   }).catch(e=> console.warn('Offline mode unavailable', e));
 }
 // register only after the page has fully loaded (and a moment more), so the offline copy never competes with opening the app
