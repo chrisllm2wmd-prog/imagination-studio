@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.16 beta';
+window.IMAGINATION_VERSION = '4.17 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -3100,7 +3100,7 @@ function bindOptions(bar){
     const a = b.dataset.act, O = MS.ops;
     if(a === 'align') O.align(b.dataset.v); else if(a === 'flipH') O.flip('h'); else if(a === 'flipV') O.flip('v');
     else if(a === 'front') O.order('front'); else if(a === 'back') O.order('back'); else if(a === 'group') O.group(); else if(a === 'ungroup') O.ungroup();
-    else if(a === 'fx') MS.fx.open(b, b.dataset.fx); else if(a === 'dup') O.duplicate(); else if(a === 'mirror') MS.symmetry && MS.symmetry.openMirror(); else if(a === 'kaleido') MS.symmetry && MS.symmetry.openKaleido();
+    else if(a === 'fx') MS.fx.toggle(b.dataset.fx, b); else if(a === 'dup') O.duplicate(); else if(a === 'mirror') MS.symmetry && MS.symmetry.openMirror(); else if(a === 'kaleido') MS.symmetry && MS.symmetry.openKaleido();
     T.renderOptions();
   }));
 }
@@ -5436,6 +5436,8 @@ function migrate(o){
 }
 
 /* ---- painting ---- */
+// an outline-only shape (no fill) must stay hollow: effects and Pass through follow its line, they never fill its centre
+const hollow = o=> !o.fill && !o._objects && o.type !== 'image', fillOf = (o, c)=> hollow(o) ? '' : c;
 const BIG = 30000;
 function shadowOnly(o, ctx, color, blur, ox, oy, draw){
   const c = o.canvas, vpt = (c && c.viewportTransform) || [1, 0, 0, 1, 0, 0]; let kx = vpt[0], ky = vpt[3];
@@ -5458,14 +5460,14 @@ function underlay(o, ctx){
   ctx.save(); o.transform(ctx); o._setOpacity(ctx); o.__fxPass = true;
   try{
     const plain = ()=> o.drawObject(ctx, false);
-    const sil = ol ? ()=> withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
+    const sil = ol ? ()=> withProps(o, { fill:fillOf(o, ol.color), stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
     if(sh){ const a = sh.angle * Math.PI / 180; shadowOnly(o, ctx, rgba(sh.color, clamp(sh.alpha, 0, 100) / 100), sh.blur, Math.cos(a) * sh.depth, Math.sin(a) * sh.depth, sil); }
     if(gl){
       const b = Math.max(0, gl.bright) / 100, reps = 1 + Math.floor(b);
       // tight + medium + wide halos stacked: the bright part always hugs the element, however large the glow
       [[.12, .95], [.35, .8], [1, .7]].forEach(([f, w])=>{ for(let i = 0; i < reps; i++) shadowOnly(o, ctx, rgba(gl.color, clamp(b * w, 0, 1)), Math.max(1, gl.size * f), 0, 0, sil); });
     }
-    if(ol) withProps(o, { fill:ol.color, stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+    if(ol) withProps(o, { fill:fillOf(o, ol.color), stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   } finally { o.__fxPass = false; ctx.restore(); }
 }
 // draws fn() with the element moved by (dx, dy) canvas px and its opacity scaled by alpha
@@ -5476,7 +5478,7 @@ function atOffset(o, ctx, dx, dy, alpha, fn){
 function underlayExtra(o, ctx){
   const st = fxStack(o); if(!st) return;
   const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
-  const solid = (col, sw)=> ()=> withProps(o, { fill:col, stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+  const solid = (col, sw)=> ()=> withProps(o, { fill:fillOf(o, col), stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
   o.__fxPass = true;
   try{
@@ -5549,7 +5551,7 @@ function cuttersFor(o){
       }
       sc.save(); sc.globalCompositeOperation = 'destination-out'; sc.globalAlpha = Math.max(0, Math.min(1, (cut.strength === undefined ? 100 : cut.strength) / 100));
       k.transform(sc); k.__fxPass = true;
-      try{ withProps(k, cut.fillOnly ? { fill:'#000', stroke:null, strokeWidth:0 } : { fill:'#000', stroke:k.stroke ? '#000' : k.stroke }, ()=> k.drawObject(sc, false)); } finally { k.__fxPass = false; sc.restore(); }
+      try{ withProps(k, cut.fillOnly ? { fill:'#000', stroke:null, strokeWidth:0 } : { fill:hollow(k) ? '' : '#000', stroke:k.stroke ? '#000' : k.stroke }, ()=> k.drawObject(sc, false)); } finally { k.__fxPass = false; sc.restore(); }
     });
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = blend || 'source-over'; ctx.drawImage(scratch, 0, 0); ctx.restore();
   };
@@ -5641,7 +5643,13 @@ MS.fx.open = function(anchor, kind){
   setTimeout(()=>{ document.addEventListener('mousedown', away, true); document.addEventListener('keydown', esc, true); }, 0);
   pop.querySelector('[data-x]').onclick = close;
 };
-MS.fx.enable = function(kind){ const root = document.getElementById('fxStack'); setKind(kind, true, root); MS.showPage('design'); };
+// a second click on an effect's button takes it off again (the pop-up closes with it)
+MS.fx.toggle = function(kind, anchor){
+  const a = cv().getActiveObject(); if(!a){ MS.toast('Select something first.'); return; }
+  if(MS.fx.kindOn(a, kind)){ document.querySelectorAll('.fxpop').forEach(p=> p.remove()); setKind(kind, false, null); }
+  else MS.fx.open(anchor, kind);
+};
+MS.fx.enable = function(kind){ const root = document.getElementById('fxStack'), a = cv().getActiveObject(); if(a && MS.fx.kindOn(a, kind)){ setKind(kind, false, root); return; } setKind(kind, true, root); MS.showPage('design'); };
 
 function wire(){
   const root = $('#fxStack'); if(root) MS.fx.build(root);
@@ -9093,6 +9101,15 @@ MS.initHelp = function(){
 const MS = window.MS;
 // only on a real web host (https) - or add ?pwa=1 to the address to try it on localhost. The local .bat version never caches, so it never goes stale while you edit.
 const web = location.protocol === 'https:' || /[?&]pwa=1\b/.test(location.search);
+MS.isWebHost = web;
+const vnum = v=> String(v || '').match(/\d+/g) || [];
+const newer = (a, b)=>{ const x = vnum(a), y = vnum(b); for(let i = 0; i < Math.max(x.length, y.length); i++){ const d = (+x[i] || 0) - (+y[i] || 0); if(d) return d > 0; } return false; };   // 4.10 is newer than 4.9
+// asks the site for release.json (version, date, notes of the newest build) - used by the title screen
+MS.checkRelease = async function(ms){
+  const ctl = new AbortController(), t = setTimeout(()=> ctl.abort(), ms || 3500);
+  try{ const r = await fetch('release.json?ts=' + Date.now(), { cache:'no-store', signal:ctl.signal }); if(!r.ok) throw new Error('http ' + r.status); const info = await r.json(); return { state: newer(info.version, window.IMAGINATION_VERSION) ? 'update' : 'current', info }; }
+  catch(e){ return { state:'error' }; } finally { clearTimeout(t); }
+};
 const standalone = ()=> matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches || navigator.standalone === true;
 let deferred = null, installedNow = false;
 const offer = ()=> web && !standalone() && !installedNow && 'serviceWorker' in navigator;
@@ -9157,6 +9174,16 @@ const hide = ()=>{ const b = document.getElementById('pwaBar'); if(b) b.remove()
 let reloading = false, updating = false;
 // reload ONLY when the visitor has just clicked "Update now" - never on a first visit, when the offline copy quietly takes over the page
 navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(!updating || reloading) return; reloading = true; try{ sessionStorage.setItem('ms.skipSplash', '1'); }catch(e){} location.reload(); });
+// the title screen's Update now: fetch the new build, activate it, reload
+MS.applyUpdate = async function(){
+  updating = true;
+  try{
+    const reg = await navigator.serviceWorker.getRegistration(); if(!reg){ location.reload(); return; }
+    await reg.update();
+    const w = reg.waiting || await new Promise(res=>{ const i = reg.installing; if(!i) return res(null); i.addEventListener('statechange', ()=>{ if(i.state === 'installed') res(reg.waiting || i); }); setTimeout(()=> res(null), 25000); });
+    if(w) w.postMessage('skipWaiting'); else location.reload();
+  }catch(e){ location.reload(); }
+};
 function updateReady(w){ bar('A new version of Imagination Studio is ready.', [['Update now', ()=>{ updating = true; w.postMessage('skipWaiting'); }], ['Later', hide]]); }
 /* ---------- "Checking for updates" spinner: a ring whose arc swings back and forth ---------- */
 let checkNow = null, busy = false;
@@ -9185,7 +9212,7 @@ function startSW(){
     reg.addEventListener('updatefound', ()=>{ const w = reg.installing; if(!w) return; w.addEventListener('statechange', ()=>{ if(w.state === 'installed' && navigator.serviceWorker.controller) updateReady(w); }); });
     setInterval(()=>{ reg.update().catch(()=>{}); }, 60 * 60 * 1000);   // look for a new version hourly while the app stays open (quietly)
     checkNow = ()=> checkForUpdates(reg);
-    if(!reg.waiting) checkForUpdates(reg);   // once at start-up, with the spinner
+    // the start-up check now lives on the title screen (boot.js runUpdateCheck); Command palette > Check for updates still runs it here
   }).catch(e=> console.warn('Offline mode unavailable', e));
 }
 // register only after the page has fully loaded (and a moment more), so the offline copy never competes with opening the app
@@ -9604,6 +9631,28 @@ function probeTitle(){
   const names = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'].map(e=> 'title/title-page.' + e);
   return Promise.all(names.map(src=> new Promise(res=>{ const im = new Image(); im.onload = ()=> res(src); im.onerror = ()=> res(null); im.src = src; }))).then(r=> r.find(Boolean) || null);   // all at once: one round trip, not six
 }
+// title screen: where the Start button is, say 'Checking for updates', then show what the new build brings
+async function runUpdateCheck(ov){
+  const box = ov.querySelector('#spUpd'); if(!box) return; const esc = MS.esc;
+  box.addEventListener('click', e=> e.stopPropagation());
+  ov.classList.add('sp-checking');
+  box.innerHTML = '<div class="upd-check"><svg class="upd-ring" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke="rgba(143,176,255,.25)"/><circle cx="12" cy="12" r="9" stroke="#8fb0ff" stroke-dasharray="21 57"/></svg><span>Checking for updates…</span></div>';
+  const t0 = Date.now(), res = await MS.checkRelease(3500);
+  await new Promise(r=> setTimeout(r, Math.max(0, 1100 - (Date.now() - t0))));
+  if(!ov.isConnected) return;
+  ov.classList.remove('sp-checking');
+  if(res.state === 'update'){
+    const i = res.info, d = i.date ? new Date(i.date + 'T12:00:00') : null, when = d && !isNaN(d) ? d.toLocaleDateString(undefined, { day:'numeric', month:'long', year:'numeric' }) : '';
+    ov.classList.add('sp-has-upd');
+    box.innerHTML = `<div class="upd-card"><div class="upd-top"><span class="upd-badge">Update found</span><b>Build ${esc(i.version || '')}</b>${when ? `<span class="upd-date">Released ${esc(when)}</span>` : ''}</div>
+      <div class="upd-sub">What’s new</div><ul class="upd-list">${(i.notes || []).map(n=> `<li>${esc(n)}</li>`).join('')}</ul>
+      <div class="upd-foot">Enjoy! For any questions, use the Contact tab (Help ▸ Contact).</div>
+      <div class="upd-btns"><button class="btn primary" id="spUpdNow">Update now</button><span class="upd-cur">You are on build ${esc(window.IMAGINATION_VERSION || '')}</span></div></div>`;
+    box.querySelector('#spUpdNow').onclick = e=>{ const b = e.currentTarget; b.disabled = true; b.textContent = 'Updating…'; MS.applyUpdate(); };
+  } else if(res.state === 'current'){
+    box.innerHTML = '<div class="upd-ok">✓ You have the latest version · build ' + esc(window.IMAGINATION_VERSION || '') + '</div>';
+  } else box.innerHTML = '<div class="upd-ok dim">Could not check for updates (offline?)</div>';
+}
 async function showSplash(artP){
   const art = await (artP || probeTitle());
   let skip = false; try{ skip = sessionStorage.getItem('ms.skipSplash') === '1'; sessionStorage.removeItem('ms.skipSplash'); }catch(e){}
@@ -9614,8 +9663,9 @@ async function showSplash(artP){
   return new Promise(res=>{
     if(art) ov.innerHTML = '<img class="sp-art" src="' + art + '" alt="Imagination Studio">';
     const ld = ov.querySelector('.sp-load'); if(ld) ld.remove();
-    ov.insertAdjacentHTML('beforeend', '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><div class="sp-bottom"><button class="btn primary sp-go" id="spGo">Start creating</button><button class="sp-install" id="spInstall" title="Free · works offline · updates itself" style="display:none"><span>' + MS.icon('download') + 'Install Imagination Studio</span></button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div></div>');
+    ov.insertAdjacentHTML('beforeend', '<div class="sp-ver">Version ' + (window.IMAGINATION_VERSION || '') + '</div><div class="sp-bottom"><div class="sp-upd" id="spUpd"></div><button class="btn primary sp-go" id="spGo">Start creating</button><button class="sp-install" id="spInstall" title="Free · works offline · updates itself" style="display:none"><span>' + MS.icon('download') + 'Install Imagination Studio</span></button><div class="sp-hint">Press Enter or click anywhere</div><div class="sp-credit">Created by Chris Chapman  ·  Powered by your Imagination</div></div>');
     MS.pwaSync && MS.pwaSync();
+    if(MS.isWebHost && MS.checkRelease) runUpdateCheck(ov);
     const go = ()=>{ document.removeEventListener('keydown', key, true); ov.classList.add('out'); setTimeout(()=> ov.remove(), 400); res(); };
     const key = e=>{ if(e.key === 'Enter' || e.key === ' ' || e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); go(); } };
     document.addEventListener('keydown', key, true); ov.addEventListener('click', go);

@@ -590,3 +590,18 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .sym-pop .sp-h{display:flex;align-items:center;gap:8px;} .sym-pop .sp-h b{flex:1;font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mut);}
 .sym-pop .chips{display:flex;flex-wrap:wrap;gap:4px;} .sym-pop .seg{display:flex;} .sym-pop .seg button{flex:1;}
 .sb-sym{margin-left:8px;padding:0 8px;border-radius:9px;background:var(--accbg);border:1px solid var(--accln);color:var(--acc2);font-size:11px;cursor:pointer;white-space:nowrap;}
+
+/* title screen: logo + name sit higher so the update check / update notes have room where the Start button is */
+#splash{align-items:flex-start;} #splash .sp-default{margin-top:9vh;transition:margin .3s;} #splash .sp-art{align-self:stretch;}
+#splash.sp-has-upd .sp-default{margin-top:3vh;} #splash.sp-has-upd .sp-mark .ic{width:54px;height:54px;} #splash.sp-has-upd h1{font-size:32px;margin:6px 0 2px;} #splash.sp-has-upd .sp-default p{display:none;}
+#splash.sp-checking .sp-go,#splash.sp-checking .sp-install,#splash.sp-checking .sp-hint{display:none !important;}
+@keyframes spSwing{0%{transform:rotate(-135deg)}50%{transform:rotate(135deg)}100%{transform:rotate(-135deg)}}
+#splash .upd-check{display:flex;align-items:center;gap:12px;height:42px;font-size:15px;color:#dfe6ff;text-shadow:0 1px 6px #000;} #splash .upd-ring{width:22px;height:22px;animation:spSwing 1.3s ease-in-out infinite;}
+#splash .upd-ok{font-size:13px;color:#8fe3b0;text-shadow:0 1px 6px #000;} #splash .upd-ok.dim{color:rgba(255,255,255,.6);}
+#splash .upd-card{width:min(540px,92vw);box-sizing:border-box;background:rgba(14,17,28,.9);border:1px solid rgba(143,176,255,.4);border-radius:12px;padding:14px 18px;box-shadow:0 12px 40px rgba(0,0,0,.55);text-align:left;color:#e8ecff;cursor:default;}
+#splash .upd-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;} #splash .upd-top b{font-size:16px;} #splash .upd-badge{background:#2f6bff;color:#fff;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:3px 9px;border-radius:10px;} #splash .upd-date{margin-left:auto;font-size:12.5px;color:#aab4d8;}
+#splash .upd-sub{margin:10px 0 4px;font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#8d97bd;}
+#splash .upd-list{list-style:none;margin:0;padding:0;max-height:22vh;overflow:auto;} #splash .upd-list li{position:relative;padding:3px 0 3px 22px;font-size:13px;line-height:1.45;} #splash .upd-list li::before{content:'✓';position:absolute;left:2px;color:#6fe3a1;font-weight:700;}
+#splash .upd-foot{margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.12);font-size:12.5px;color:#cfd6f3;}
+#splash .upd-btns{display:flex;align-items:center;gap:12px;margin-top:10px;} #splash .upd-cur{font-size:12px;color:#8d97bd;}
+@media (prefers-reduced-motion:reduce){#splash .upd-ring{animation-duration:3s;}}

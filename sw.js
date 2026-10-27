@@ -1,8 +1,8 @@
 /* Imagination Studio service worker: offline use + safe updates.
    VERSION is stamped by make-download.ps1, so every new build gets its own cache and the browser sees a changed sw.js. */
-const VERSION = '4.16 beta';
+const VERSION = '4.17 beta';
 const CACHE = 'imagination-' + VERSION;
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png', 'app.js?v=4.16-beta'];
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png', 'app.js?v=4.17-beta'];
 
 self.addEventListener('install', e=>{
   // fetch fresh copies (bypass the browser HTTP cache) and keep them; the new worker WAITS until the user accepts the update
@@ -24,7 +24,8 @@ async function cacheFonts(){
 }
 self.addEventListener('fetch', e=>{
   const req = e.request, url = new URL(req.url);
-  if(req.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/claude/')) return;   // never touch the Claude / save endpoints or other sites
+  if(req.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/claude/') || url.pathname.endsWith('/release.json')) return;   // release.json is always fetched live: it is how the title screen learns about a new build
+     // never touch the Claude / save endpoints or other sites
   e.respondWith(caches.open(CACHE).then(async c=>{
     const hit = await c.match(req, { ignoreSearch:true });
     if(hit) return hit;

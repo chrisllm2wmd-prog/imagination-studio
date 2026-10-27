@@ -1,0 +1,10 @@
+{
+  "version": "4.17 beta",
+  "date": "2026-10-28",
+  "notes": [
+    "Title screen now checks for updates and shows what is new before you start.",
+    "Outline-only shapes stay truly hollow when you use Pass through or any effect.",
+    "A second click on Shadow, Glow or Outline switches that effect off again.",
+    "Live symmetry, Solid / Outline shape drawing and a value box on every slider are included from the previous build."
+  ]
+}
