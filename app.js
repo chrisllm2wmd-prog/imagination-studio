@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.12 beta';
+window.IMAGINATION_VERSION = '4.13 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -5840,15 +5840,56 @@ MS.quickExport = async function(){
   const d = S.doc; X.name = d.name; initSize();
   try{ const f = FORMATS[0], r = await encode('png'); const msg = await MS.saveFile(r.blob, safeName() + '.png'); toast('Exported PNG (' + fmtBytes(r.blob.size) + ') — ' + msg, 6000); }catch(e){ toast('Export failed: ' + e.message, 5000, 'err'); }
 };
-// full-screen preview on the garment colour
+// full-screen preview: a top bar picks the backdrop (colour / texture / finish) behind the artwork; the last choice is remembered
+const PV_COLOURS = [['garment', 'Garment', null], ['clear', 'Clear', null], ['#ffffff', 'White', '#ffffff'], ['#d9dbe0', 'Light grey', '#d9dbe0'], ['#8a8d96', 'Grey', '#8a8d96'], ['#2b2c33', 'Charcoal', '#2b2c33'], ['#000000', 'Black', '#000000'], ['#16264d', 'Navy', '#16264d'], ['#a3202a', 'Red', '#a3202a'], ['#1f5a3a', 'Forest', '#1f5a3a'], ['#e0b13a', 'Gold', '#e0b13a'], ['#d8c3a0', 'Sand', '#d8c3a0']];
+const PV_TEXTURES = [['none', 'None'], ['paper', 'Paper'], ['canvas', 'Canvas'], ['twill', 'Fabric'], ['concrete', 'Concrete'], ['carbon', 'Carbon'], ['dots', 'Halftone']];
+const PV_FINISHES = [['matte', 'Matte', 'none'], ['satin', 'Satin', 'radial-gradient(ellipse at 30% 20%,rgba(255,255,255,.22),rgba(255,255,255,0) 62%)'], ['gloss', 'Gloss', 'linear-gradient(115deg,rgba(255,255,255,0) 30%,rgba(255,255,255,.3) 45%,rgba(255,255,255,0) 60%)'],
+  ['metal', 'Metallic', 'linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.35) 18%,rgba(0,0,0,.18) 32%,rgba(255,255,255,.3) 50%,rgba(0,0,0,.2) 70%,rgba(255,255,255,.25) 85%,rgba(255,255,255,0))'],
+  ['spot', 'Spotlight', 'radial-gradient(circle at 50% 45%,rgba(255,255,255,.3),rgba(0,0,0,.35) 90%)'], ['vign', 'Vignette', 'radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.55) 100%)']];
+const pvTiles = {};
+function pvTexture(kind){
+  if(pvTiles[kind] !== undefined) return pvTiles[kind]; if(kind === 'none') return (pvTiles[kind] = '');
+  const n = 128, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d');
+  let seed = 7; const rnd = ()=> (seed = (seed * 16807) % 2147483647) / 2147483647;   // same texture every time
+  g.fillStyle = '#808080'; g.fillRect(0, 0, n, n);
+  if(kind === 'paper'){ const d = g.getImageData(0, 0, n, n); for(let i = 0; i < d.data.length; i += 4){ const v = 108 + rnd() * 40; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; } g.putImageData(d, 0, 0); }
+  else if(kind === 'canvas'){ for(let y = 0; y < n; y += 4){ g.fillStyle = 'rgba(255,255,255,.28)'; g.fillRect(0, y, n, 2); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(0, y + 2, n, 1); } for(let x = 0; x < n; x += 4){ g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, 0, 2, n); g.fillStyle = 'rgba(0,0,0,.2)'; g.fillRect(x + 2, 0, 1, n); } }
+  else if(kind === 'twill'){ g.lineWidth = 2; for(let k = -n; k < n * 2; k += 5){ g.strokeStyle = (k / 5) % 2 ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)'; g.beginPath(); g.moveTo(k, 0); g.lineTo(k + n, n); g.stroke(); } }
+  else if(kind === 'concrete'){ for(let i = 0; i < 260; i++){ const x = rnd() * n, y = rnd() * n, r = 4 + rnd() * 20, v = rnd() < .5 ? 255 : 0, gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${v},${v},${v},.16)`); gr.addColorStop(1, `rgba(${v},${v},${v},0)`); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); } for(let i = 0; i < 500; i++){ g.fillStyle = rnd() < .5 ? 'rgba(0,0,0,.3)' : 'rgba(255,255,255,.3)'; g.fillRect(rnd() * n, rnd() * n, 1, 1); } }
+  else if(kind === 'carbon'){ for(let y = 0; y < n; y += 8) for(let x = 0; x < n; x += 8){ const alt = ((x + y) / 8) % 2; g.fillStyle = alt ? 'rgba(0,0,0,.45)' : 'rgba(255,255,255,.2)'; g.fillRect(x, y, 4, 4); g.fillRect(x + 4, y + 4, 4, 4); g.fillStyle = alt ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.35)'; g.fillRect(x + 4, y, 4, 4); g.fillRect(x, y + 4, 4, 4); } }
+  else if(kind === 'dots'){ g.fillStyle = 'rgba(0,0,0,.5)'; for(let y = 4; y < n; y += 8) for(let x = 4; x < n; x += 8){ g.beginPath(); g.arc(x + ((y / 8) % 2 ? 4 : 0), y, 2, 0, 7); g.fill(); } }
+  return (pvTiles[kind] = c.toDataURL('image/png'));
+}
 MS.preview = function(){
-  const g = MS.garmentValue(), mult = Math.min(2, 2400 / Math.max(S.doc.wPx, S.doc.hPx));
-  const url = MS.renderArtboard({ multiplier:mult, background:g }).toDataURL('image/png');
+  const garment = MS.garmentValue(), mult = Math.min(2, 2400 / Math.max(S.doc.wPx, S.doc.hPx));
+  const url = MS.renderArtboard({ multiplier:mult, background:null }).toDataURL('image/png');
+  const saved = MS.store.get('previewBg', null) || {}, pick = { c:saved.c || 'garment', t:saved.t || 'none', f:saved.f || 'matte', custom:saved.custom || '#3a6ea5' };
+  const checker = 'repeating-conic-gradient(#3a3b45 0% 25%,#2b2c33 0% 50%) 50%/24px 24px';
   const ov = document.createElement('div');
-  ov.style.cssText = `position:fixed;inset:0;z-index:2000;background:${g || 'repeating-conic-gradient(#3a3b45 0% 25%,#2b2c33 0% 50%) 50%/24px 24px'};display:flex;align-items:center;justify-content:center;cursor:zoom-out`;
-  ov.innerHTML = `<img src="${url}" style="max-width:96vw;max-height:96vh;object-fit:contain;box-shadow:0 10px 60px rgba(0,0,0,.35)"><div style="position:fixed;top:10px;right:14px;font:12px Segoe UI;color:#fff;background:rgba(0,0,0,.55);padding:5px 10px;border-radius:6px">Click or press Esc to close</div>`;
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;cursor:zoom-out';
+  ov.innerHTML = `<div class="pv-tex" style="position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;opacity:.7"></div><div class="pv-fin" style="position:absolute;inset:0;pointer-events:none"></div>
+    <img src="${url}" style="position:relative;max-width:96vw;max-height:80vh;object-fit:contain;box-shadow:0 10px 60px rgba(0,0,0,.35);margin-top:70px">
+    <div class="pv-bar" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);max-width:94vw;display:flex;flex-direction:column;gap:5px;padding:7px 10px;background:rgba(14,15,20,.82);border:1px solid rgba(255,255,255,.14);border-radius:9px;font:11.5px Segoe UI,system-ui,sans-serif;color:#dfe3f2;cursor:default;backdrop-filter:blur(6px)"></div>
+    <div style="position:fixed;bottom:10px;right:14px;font:12px Segoe UI;color:#fff;background:rgba(0,0,0,.55);padding:5px 10px;border-radius:6px">Click the background or press Esc to close</div>`;
+  const bar = ov.querySelector('.pv-bar'), tex = ov.querySelector('.pv-tex'), fin = ov.querySelector('.pv-fin');
+  const chip = (on, label, extra, data)=> `<button data-${data}="${label[0]}" style="all:unset;box-sizing:border-box;cursor:pointer;padding:3px 9px;border-radius:12px;border:1px solid ${on ? '#8fb0ff' : 'rgba(255,255,255,.18)'};background:${on ? 'rgba(91,140,255,.35)' : 'rgba(255,255,255,.06)'};color:#fff;white-space:nowrap;display:inline-flex;align-items:center;gap:6px">${extra || ''}${label[1]}</button>`;
+  const swatch = bg=> `<i style="width:11px;height:11px;border-radius:50%;background:${bg};border:1px solid rgba(255,255,255,.4);display:inline-block"></i>`;
+  const row = (name, html)=> `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="width:52px;color:#9aa3c7;font-weight:600">${name}</b>${html}</div>`;
+  const draw = ()=>{
+    const col = pick.c === 'garment' ? garment : pick.c === 'clear' ? null : pick.c === 'custom' ? pick.custom : pick.c;
+    ov.style.background = col || checker;
+    const t = pvTexture(pick.t); tex.style.backgroundImage = t ? `url(${t})` : 'none'; tex.style.display = t ? '' : 'none';
+    const f = PV_FINISHES.find(x=> x[0] === pick.f); fin.style.background = f ? f[2] : 'none';
+    bar.innerHTML = row('Colour', PV_COLOURS.map(c=> chip(pick.c === c[0], c, swatch(c[0] === 'garment' ? (garment || checker) : c[0] === 'clear' ? checker : c[2]), 'c')).join('') + `<label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer">${chip(pick.c === 'custom', ['custom', 'Custom'], swatch(pick.custom), 'c')}<input type="color" value="${pick.custom}" data-cc style="width:22px;height:22px;border:0;padding:0;background:none;cursor:pointer"></label>`)
+      + row('Texture', PV_TEXTURES.map(x=> chip(pick.t === x[0], x, '', 't')).join('')) + row('Finish', PV_FINISHES.map(x=> chip(pick.f === x[0], x, '', 'f')).join(''));
+    try{ MS.store.set('previewBg', pick); }catch(e){}
+  };
+  bar.addEventListener('click', e=>{ e.stopPropagation(); const b = e.target.closest('button'); if(!b) return; if(b.dataset.c) pick.c = b.dataset.c; else if(b.dataset.t) pick.t = b.dataset.t; else if(b.dataset.f) pick.f = b.dataset.f; draw(); });
+  bar.addEventListener('input', e=>{ if(e.target.matches('[data-cc]')){ pick.custom = e.target.value; pick.c = 'custom'; ov.style.background = pick.custom; try{ MS.store.set('previewBg', pick); }catch(x){} } });
+  bar.addEventListener('change', e=>{ if(e.target.matches('[data-cc]')) draw(); });
+  draw();
   document.body.appendChild(ov);
-  let stopAnim = null; if(animated()){ const im = ov.querySelector('img'), c = document.createElement('canvas'); c.style.cssText = im.style.cssText; im.replaceWith(c); stopAnim = MS.anim.runPreview(c, g, 1400); }
+  let stopAnim = null; if(animated()){ const im = ov.querySelector('img'), c = document.createElement('canvas'); c.style.cssText = im.style.cssText; im.replaceWith(c); stopAnim = MS.anim.runPreview(c, null, 1400); }
   const close = ()=>{ stopAnim && stopAnim(); document.removeEventListener('keydown', k, true); if(document.fullscreenElement) document.exitFullscreen().catch(()=>{}); ov.remove(); };
   const k = e=>{ if(e.key === 'Escape'){ e.stopPropagation(); close(); } };
   document.addEventListener('keydown', k, true); ov.addEventListener('click', close);
