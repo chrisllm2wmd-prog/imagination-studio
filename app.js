@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.23.2 beta';
+window.IMAGINATION_VERSION = '4.23.3 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -2496,12 +2496,12 @@ function pointOf(o){ return cv().getPointer(o.e); }
 function snapP(p){ return MS.snapPoint(p); }
 // when live symmetry is on, the new element's copies are made first so it is one undo step
 function commitLive(obj, label){ const lv = MS.liveSym && MS.liveSym.on && MS.liveSym.add(obj); if(lv) lv.then(()=> MS.commit(label)); else MS.commit(label); }
-function finishCreate(obj, label, keepTool){
+function finishCreate(obj, label){
   const c = cv();
   c.discardActiveObject();
   c.setActiveObject(obj);
   commitLive(obj, label);
-  if(!MS.prefs.stickyTools && !keepTool) T.set('move');
+  if(!MS.prefs.stickyTools) T.set('move');   // anything just placed: back to Move so it can be positioned and sized
   else { c.requestRenderAll(); }
 }
 
@@ -2680,7 +2680,7 @@ function shapeTool(kind, icon, key, label){
       }
       temp.setCoords(); MS.hideHud();
       const o = temp; temp = null; MS.liveSym && MS.liveSym.ghost(null);
-      finishCreate(o, 'Draw ' + describe(kind).toLowerCase(), true);   // the shape the user picked stays armed (its icon is still showing); V / Move to leave
+      finishCreate(o, 'Draw ' + describe(kind).toLowerCase());
     },
     exit(){ if(temp){ cv().remove(temp); temp = null; } MS.liveSym && MS.liveSym.ghost(null); },
   };
@@ -2724,7 +2724,7 @@ reg({ id:'zoom', label:'Zoom', icon:'zoom', key:'Z', lock:true, cursor:'zoom-in'
  ['moon','moon','','Moon / crescent'],['ring','ring','','Ring / donut'],['semicircle','semicircle','','Semicircle'],['speech','speech','','Speech bubble'],['star4','star4','','4-point star']].forEach(([k, ic, key, label])=>{
   const d = shapeTool(k, ic, key, label);
   d.isShape = true;
-  d.hint = label + ': drag to draw · snaps to a perfect square/circle (Shift forces it) · 45° · Alt = from centre. Stays on this shape until you pick another tool (V = Move).';
+  d.hint = label + ': drag to draw · snaps to a perfect square/circle (Shift forces it) · 45° · Alt = from centre. Switches back to Move / Select when you let go.';
   reg(d);
 });
 
@@ -2893,6 +2893,7 @@ function wireMouse(){
     const p = e.path;
     p.set({ strokeLineCap:'round', strokeLineJoin:'round', strokeUniform:true, objectCaching:false });
     c.setActiveObject(p); commitLive(p, 'Brush stroke');
+    if(!MS.prefs.stickyTools) T.set('move');
   });
   MS.on('overlay', ctx=>{ const t = defs[S.tool]; if(t && t.overlay) t.overlay(ctx); });
 }
