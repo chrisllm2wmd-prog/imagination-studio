@@ -1,7 +1,7 @@
 WHY IMAGINATION STUDIO EXISTS  (also: Help centre, first topic)
   I set out to make my own line of merch and found every editor different, missing key tools or locked behind restrictions. I ended up juggling browser tools, sketchy downloads and free trials that filled my mailbox with spam. That slowed me down and stressed me out. Imagination Studio was born from that: one honest place to design it all - no tab-hopping, no sketchy downloads, no spam.  - Chris Chapman
 
-﻿IMAGINATION STUDIO  -  one editor for logos, ads and merch
+IMAGINATION STUDIO  -  one editor for logos, ads and merch
 =====================================================
 
 START IT
@@ -18,8 +18,8 @@ THE THREE WORKSPACES (top bar)  - all one canvas, one file
   Switching never loses work. File > New has presets for every one of them
   (incl. 2048/4096 square decals for Gran Turismo-style livery editors).
 
-TOOLS (left)  V Move  H Hand  Z Zoom  R Rect / O Ellipse / L Line / more shapes (hold or
-  right-click the shape button)  P Pen (bezier)  B Pencil  T Text  W Magic wand
+TOOLS (left)  V Move  H Hand  Z Zoom  R Rect / O Ellipse / L Line / more shapes (hover the
+  shape button)  P Pen (bezier)  B Pencil  T Text  W Magic wand
   E Eraser  I Eyedropper  X swap fill/stroke.   Press Ctrl+K to search every command.
   DRAWING TOOLS LOCK THE CANVAS: while a shape/pen/pencil/text tool is active you can only
   draw - clicking an existing item never selects it. Press V to go back to Move.
@@ -54,8 +54,6 @@ AD WORKSPACE
   edit anything afterwards. "Use my current design as the logo picture" pulls your logo in.
 
 CLAUDE TAB  Ask Claude to design, edit, critique or ANIMATE (e.g. "slide it in, pulse, loop"); changes = one undo step. Works with Claude Code on this PC (needs the .bat) or your own Claude API key pasted in the tab (kept only in your browser).
-
-Your previous version is kept in MERCH\_backup_before_unify and MERCH\merch-logo-builder\_old.
 
 GROUPS PANEL (left)
   Drag a box round, or Shift-click, several things and they appear in the Groups panel,

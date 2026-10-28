@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.21 beta';
+window.IMAGINATION_VERSION = '4.22 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -626,6 +626,8 @@ function hydrate(root){
   (root||document).querySelectorAll('i[data-i]').forEach(el=>{
     el.outerHTML = svg(el.getAttribute('data-i'), el.getAttribute('class')||'');
   });
+  // icon-only buttons: screen readers read the tooltip title instead of just "button"
+  (root||document).querySelectorAll('[data-tip]:not([aria-label])').forEach(b=>{ if(!b.textContent.trim()) b.setAttribute('aria-label', b.getAttribute('data-tip').split('|')[0]); });
 }
 window.MSI = { svg, hydrate, names:Object.keys(P) };
 })();
@@ -794,12 +796,20 @@ function wireAccordions(root){
       const s = h.parentElement; s.classList.toggle('collapsed');
       const k = s.dataset.sect; if(k) MS.store.set('sect.'+k, s.classList.contains('collapsed'));
     });
-    // every collapsible group starts closed (the ones with a chevron); open ones stay open while the app is running
-    const s = h.parentElement;
-    if(h.querySelector('.car, [data-i="chevd"]')) s.classList.add('collapsed');
+    // collapsible groups (the ones with a chevron) start closed the first time, then remember how the user left them
+    const s = h.parentElement, k = s.dataset.sect;
+    if(h.querySelector('.car, [data-i="chevd"]') && (k ? MS.store.get('sect.' + k, true) : true)) s.classList.add('collapsed');
   });
 }
 MS.wireAccordions = wireAccordions;
+MS.openSect = k=>{ const s = document.querySelector('.sect[data-sect="' + k + '"]'); if(s && s.classList.contains('collapsed')){ s.classList.remove('collapsed'); MS.store.set('sect.' + k, false); } };
+// when the kind of thing selected changes, open its main Design section (Text for text, Picture for pictures, Fill for shapes); others are left as they are
+let lastSelKind = '';
+MS.on('selection', ()=>{
+  const o = MS.canvas && MS.canvas.getActiveObject(), kind = !o ? '' : MS.isTextObj && MS.isTextObj(o) ? 'text' : o.type === 'image' ? 'image' : o.type === 'activeSelection' || o.type === 'group' ? '' : 'fillstroke';
+  if(kind && kind !== lastSelKind){ const s = document.querySelector('.sect[data-sect="' + kind + '"]'); if(s && s.classList.contains('collapsed') && s.offsetParent) s.classList.remove('collapsed'); }
+  lastSelKind = kind;
+});
 
 MS.showPage = function(page){
   const tab = $(`.dock-tab[data-page="${page}"]`); if(!tab) return;
@@ -2101,12 +2111,13 @@ function pruneStore(){
   history.forEach(h=>{ const m = h.json.match(/@img:([A-Za-z0-9_]+)/g); if(m) m.forEach(t=>used.add(t.slice(5))); });
   Object.keys(imageStore).forEach(k=>{ if(!used.has(k)) delete imageStore[k]; });
 }
-function histBytes(){ let n = 0; history.forEach(h=> n += h.json.length); Object.values(imageStore).forEach(s=> n += s.length); return n; }
+function histBytes(){ let n = 0; history.forEach(h=> n += h.json.length + (h.extra || '').length); Object.values(imageStore).forEach(s=> n += s.length); return n; }
 function pushHistory(label, initial){
   if(S.suspend || !canvas) return;
   const json = canvas.toJSON(SERIALIZE_PROPS);
   if(!initial) history = history.slice(0, historyIndex + 1);
-  history.push({ json: JSON.stringify(stripImg(json)), label: label || 'Edit', t: Date.now() });
+  let extra = ''; try{ extra = MS.collectExtra ? JSON.stringify(MS.collectExtra()) : ''; }catch(e){}   // animation tracks, ad settings, group links: undo covers them too
+  history.push({ json: JSON.stringify(stripImg(json)), extra, label: label || 'Edit', t: Date.now() });
   while(history.length > MAX_HISTORY || (histBytes() > MAX_HISTORY_BYTES && history.length > 1)) history.shift();
   pruneStore(); historyIndex = history.length - 1;
   S.dirty = true; scheduleAutosave();
@@ -2118,17 +2129,20 @@ function commit(label){
   MS.emit('layers'); emitSelection();
 }
 MS.commit = commit; MS.pushHistory = pushHistory;
-function loadSnapshot(idx){
+function loadSnapshot(idx, from){
   S.suspend = true;
+  const ex = history[idx].extra, exChanged = ex && from !== undefined && history[from] && history[from].extra !== ex;   // only when the step being undone changed them, so live timeline tweaks survive canvas-only undos
   const json = restoreImg(JSON.parse(history[idx].json));
   canvas.loadFromJSON(json, ()=>{
-    S.suspend = false; canvas.requestRenderAll();
+    S.suspend = false;
+    if(exChanged && MS.restoreExtra) try{ MS.restoreExtra(JSON.parse(ex)); }catch(e){}
+    canvas.requestRenderAll();
     MS.emit('layers'); MS.emit('selection'); MS.emit('history'); updateStatusSel(); MS.emit('mockup-dirty');
   });
 }
-MS.undo = function(){ if(historyIndex <= 0){ toast('Nothing to undo'); return; } historyIndex--; loadSnapshot(historyIndex); };
-MS.redo = function(){ if(historyIndex >= history.length - 1){ toast('Nothing to redo'); return; } historyIndex++; loadSnapshot(historyIndex); };
-MS.jumpHistory = function(i){ if(i < 0 || i >= history.length) return; historyIndex = i; loadSnapshot(i); };
+MS.undo = function(){ if(historyIndex <= 0){ toast('Nothing to undo'); return; } historyIndex--; loadSnapshot(historyIndex, historyIndex + 1); };
+MS.redo = function(){ if(historyIndex >= history.length - 1){ toast('Nothing to redo'); return; } historyIndex++; loadSnapshot(historyIndex, historyIndex - 1); };
+MS.jumpHistory = function(i){ if(i < 0 || i >= history.length) return; const from = historyIndex; historyIndex = i; loadSnapshot(i, from); };
 MS.getHistory = ()=> ({ list: history.map(h=>({ label:h.label, t:h.t })), index: historyIndex });
 MS.suspendHistory = fn=> { const was = S.suspend; S.suspend = true; try{ return fn(); } finally { S.suspend = was; } };
 
@@ -2141,7 +2155,7 @@ MS.projectPayload = function(){
   return { v:2, meta: Object.assign({}, S.doc, { guides:S.guides, ws: document.body.dataset.ws }), canvasJSON: canvas.toJSON(SERIALIZE_PROPS), extra: MS.collectExtra ? MS.collectExtra() : {} };
 };
 async function doAutosave(){
-  if(!canvas || !S.ready) return;
+  if(!canvas || !S.ready || !canvas.getObjects().length) return;   // an empty new design never overwrites the last recovery copy
   try{
     const db = await openDB();
     await new Promise((res, rej)=>{ const tx = db.transaction(AUTOSAVE_STORE, 'readwrite'); tx.objectStore(AUTOSAVE_STORE).put({ payload: MS.projectPayload(), savedAt: Date.now() }, AUTOSAVE_KEY); tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); });
@@ -2222,7 +2236,7 @@ MS.chooseFolder = async function(){ const h = await window.showDirectoryPicker({
 // save without ever falling back to a download: local server, else the remembered folder. Returns where it went, or null.
 MS.saveQuiet = async function(blob, filename, sub){
   if(/^https?:$/.test(location.protocol) && ['localhost','127.0.0.1'].includes(location.hostname)){
-    try{ const r = await fetch('save?name=' + encodeURIComponent(filename) + (sub ? '&dir=' + encodeURIComponent(sub) : ''), { method:'POST', body:blob }); if(r.ok){ const j = await r.json(); return { where:'MERCH\\' + (j.dir || 'logos'), name:j.name }; } }catch(e){}
+    try{ const r = await fetch('save?name=' + encodeURIComponent(filename) + (sub ? '&dir=' + encodeURIComponent(sub) : ''), { method:'POST', headers:{ 'X-Merch-Studio':'1' }, body:blob }); if(r.ok){ const j = await r.json(); return { where:'MERCH\\' + (j.dir || 'logos'), name:j.name }; } }catch(e){}
   }
   const h = await MS.folderHandle(false);
   if(h){ try{ const d = sub ? await h.getDirectoryHandle(sub, { create:true }) : h; const dot = filename.lastIndexOf('.'), base = dot > 0 ? filename.slice(0, dot) : filename, ext = dot > 0 ? filename.slice(dot) : ''; let name = filename, n = 2;
@@ -2236,7 +2250,7 @@ MS.saveFile = async function(blob, filename, fileHandle, sub){
   }
   if(/^https?:$/.test(location.protocol) && ['localhost','127.0.0.1'].includes(location.hostname)){
     try{
-      const r = await fetch('save?name=' + encodeURIComponent(filename) + (sub ? '&dir=' + encodeURIComponent(sub) : ''), { method:'POST', body:blob });
+      const r = await fetch('save?name=' + encodeURIComponent(filename) + (sub ? '&dir=' + encodeURIComponent(sub) : ''), { method:'POST', headers:{ 'X-Merch-Studio':'1' }, body:blob });
       if(r.ok){ const j = await r.json(); return 'saved to MERCH\\' + (j.dir || 'logos') + '\\' + j.name; }
     }catch(e){}
   }
@@ -2442,7 +2456,7 @@ MS.initCore = function(){
     e.preventDefault(); dragN = 0; veil.classList.remove('on');
     if(e.dataTransfer.files && e.dataTransfer.files.length) MS.importFiles(e.dataTransfer.files, e);
   });
-  window.addEventListener('beforeunload', e=>{ if(S.dirty && S.ready && (canvas.getObjects().length)){ doAutosave(); } });
+  window.addEventListener('beforeunload', e=>{ if(S.dirty && S.ready && (canvas.getObjects().length)){ doAutosave(); e.preventDefault(); e.returnValue = ''; } });   // browser shows its own "Leave site?" prompt
   window.addEventListener('dragover', e=> e.preventDefault()); window.addEventListener('drop', e=> e.preventDefault());
 };
 
@@ -2576,6 +2590,7 @@ const SHAPE_PATH = {
   semicircle:'M0 50 A50 50 0 0 1 100 50 Z',
   speech:'M10 0 H90 Q100 0 100 10 V60 Q100 70 90 70 H42 L20 95 L26 70 H10 Q0 70 0 60 V10 Q0 0 10 0 Z',
 };
+MS.shapeKinds = ['rect', 'rrect', 'ellipse', 'triangle', 'polygon', 'star', 'star4', 'pentagon', 'hexagon', 'octagon', ...Object.keys(SHAPE_PTS), ...Object.keys(SHAPE_PATH), 'cross'];   // listed for the Claude tab
 function makeShape(kind, x0, y0, w, h, p0, p1){
   const outlineOnly = SHAPE_OPT.style === 'line' && kind !== 'line' && kind !== 'arrow', lineCol = S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke;
   const common = outlineOnly ? { fill:'', stroke:lineCol, strokeWidth:Math.max(.5, SHAPE_OPT.outlineW), strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' }
@@ -2893,23 +2908,16 @@ T.addShape = function(kind, o){
   o = o || {};
   const cx = o.x !== undefined ? o.x : S.doc.wPx/2, cy = o.y !== undefined ? o.y : S.doc.hPx/2;
   const w = o.w || Math.min(S.doc.wPx, S.doc.hPx) * .35, h = o.h || w;
-  const saved = { fill:S.fill, stroke:S.stroke, noFill:S.noFill, noStroke:S.noStroke, sw:S.strokeW };
-  if(o.fill !== undefined){ S.fill = o.fill; S.noFill = !o.fill; }
+  const saved = { fill:S.fill, stroke:S.stroke, noFill:S.noFill, noStroke:S.noStroke, sw:S.strokeW, style:SHAPE_OPT.style };
+  if(o.fill !== undefined){ S.fill = o.fill; S.noFill = !o.fill; if(o.fill){ SHAPE_OPT.style = 'solid'; if(o.stroke === undefined) S.noStroke = true; } }   // a requested colour wins over the last-used Outline style / default stroke
   if(o.stroke !== undefined){ S.stroke = o.stroke || S.stroke; S.noStroke = !o.stroke; }
-  let obj;
-  if(kind === 'heart') obj = new fabric.Path('M 0 -8 C -2 -14 -12 -14 -12 -4 C -12 4 -4 8 0 14 C 4 8 12 4 12 -4 C 12 -14 2 -14 0 -8 Z', { fill:fillValue(), stroke:strokeValue(), strokeWidth:S.noStroke ? 0 : S.strokeW, originX:'center', originY:'center', left:cx, top:cy, scaleX:w/26, scaleY:h/26 });
-  else if(kind === 'speech') obj = new fabric.Path('M 2 2 H 30 V 20 H 12 L 4 28 L 6 20 H 2 Z', { fill:fillValue(), stroke:strokeValue(), strokeWidth:S.noStroke ? 0 : S.strokeW, originX:'center', originY:'center', left:cx, top:cy, scaleX:w/30, scaleY:h/30 });
-  else if(kind === 'cross'){
-    const t = w * .34, pts = [{x:-t/2,y:-w/2},{x:t/2,y:-w/2},{x:t/2,y:-t/2},{x:w/2,y:-t/2},{x:w/2,y:t/2},{x:t/2,y:t/2},{x:t/2,y:w/2},{x:-t/2,y:w/2},{x:-t/2,y:t/2},{x:-w/2,y:t/2},{x:-w/2,y:-t/2},{x:-t/2,y:-t/2}];
-    obj = new fabric.Polygon(pts, { fill:fillValue(), stroke:strokeValue(), strokeWidth:S.noStroke ? 0 : S.strokeW, originX:'center', originY:'center', left:cx, top:cy });
-  } else {
-    obj = makeShape(kind, cx - w/2, cy - h/2, w, h, { x:cx - w/2, y:cy }, { x:cx + w/2, y:cy });
-  }
+  if(kind === 'cross') kind = 'plus';   // one shape system: hand-drawn and Claude-added shapes use the same outlines
+  const obj = makeShape(kind, cx - w/2, cy - h/2, w, h, { x:cx - w/2, y:cy }, { x:cx + w/2, y:cy });
   Object.assign(S, { fill:saved.fill, stroke:saved.stroke, noFill:saved.noFill, noStroke:saved.noStroke });
+  SHAPE_OPT.style = saved.style;
   if(!obj){ MS.shapeLib(kind); return cv().getActiveObject(); }
-  if(['heart', 'speech', 'cross'].includes(kind)) outlineStyle(obj);
   obj.__kind = kind;
-  obj.name = MS.nextName(kind === 'rrect' ? 'rect' : (['heart','speech','cross'].includes(kind) ? 'polygon' : kind));
+  obj.name = MS.nextName(kind === 'rrect' ? 'rect' : kind);
   const c = cv(); c.add(obj); c.discardActiveObject(); c.setActiveObject(obj); c.requestRenderAll(); commitLive(obj, 'Add ' + describe(kind).toLowerCase());
   return obj;
 };
@@ -5857,7 +5865,7 @@ Object.assign(MS.fx, {
     if(FXDEF[kind]) MS.fx.enable(kind);
     else if(kind === 'distress'){ $('#fxDistressKind').value = 'grunge'; $('#fxDistressKind').dispatchEvent(new Event('change')); }
     else if(kind === 'clear'){ eachTarget(o=>{ o.shadow = null; o.paintFirst = 'fill'; if(o.__fx) o.__fx = {}; o.objectCaching = !MS.isTextObj(o); }); MS.commit('Clear effects'); MS.emitSelection(); }
-    MS.showPage('design');
+    MS.showPage('design'); MS.openSect && MS.openSect('effects');
   },
   applyDistress, makeMask,
 });
@@ -6195,10 +6203,10 @@ MS.openExport = async function(fmtId){
   X.dpi = X.dpi || 300; if(fmtId) X.fmt = fmtId;
   if(X.fmt === 'avif' && !avifOK) X.fmt = 'png';
   X.name = S.doc.name || 'design'; initSize();
-  const fmts = FORMATS.filter(f=> !f.optional || avifOK);
+  const fmts = FORMATS;   // AVIF stays visible but greyed out when this browser can't encode it
   const body = document.createElement('div'); body.style.cssText = 'display:grid;grid-template-columns:1fr 280px;gap:18px';
   body.innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;min-width:0">
-      <div><div class="hint" style="margin-bottom:6px">Format</div><div class="fmt-grid" id="xFmts">${fmts.map(f=>`<div class="fmt" data-f="${f.id}"><b>${f.label}</b><small>${f.sub}</small></div>`).join('')}</div></div>
+      <div><div class="hint" style="margin-bottom:6px">Format</div><div class="fmt-grid" id="xFmts">${fmts.map(f=> f.optional && !avifOK ? `<div class="fmt off" data-f="" title="This browser can't make ${f.label} files. Try Chrome or Edge."><b>${f.label}</b><small>Not in this browser</small></div>` : `<div class="fmt" data-f="${f.id}"><b>${f.label}</b><small>${f.sub}</small></div>`).join('')}</div></div>
       <div class="r"><label style="width:70px">File name</label><input type="text" class="grow" id="xName" spellcheck="false"><span class="muted" id="xExt" style="width:42px">.png</span></div>
       <div id="xSizeBox">
         <div class="hint" style="margin-bottom:6px">Size</div>
@@ -6226,7 +6234,7 @@ MS.openExport = async function(fmtId){
 
 function wireDialog(root){
   const q = id=> $('#' + id, root), d = S.doc;
-  $$('#xFmts .fmt', root).forEach(el=> el.onclick = ()=>{ if(el.dataset.f === 'gif' && animated()){ dlg && dlg.close(); MS.anim.openExport(); return; } X.fmt = el.dataset.f; syncDialog(root); schedule(); });
+  $$('#xFmts .fmt', root).forEach(el=> el.onclick = ()=>{ if(!el.dataset.f) return; if(el.dataset.f === 'gif' && animated()){ dlg && dlg.close(); MS.anim.openExport(); return; } X.fmt = el.dataset.f; syncDialog(root); schedule(); });
   q('xName').oninput = e=> { X.name = e.target.value; };
   const setW = w=>{ X.wPx = Math.max(1, Math.round(w)); X.hPx = Math.max(1, Math.round(X.wPx * d.hPx / d.wPx)); X.dpi = d.mode === 'print' ? Math.round(X.wPx / d.wIn) : X.dpi; syncDialog(root, true); schedule(); };
   q('xW').oninput = e=> setW(+e.target.value || 1);
@@ -8008,7 +8016,7 @@ function snapshot(){
 function prompt(userText, hasImage){
   const hist = state.history.slice(-8).map(m=> (m.role === 'user' ? 'USER: ' : 'YOU: ') + m.text).join('\n');
   const g = MS.garmentValue();
-  return `You are the design assistant built into "Merch Studio", a local logo / ad / merch design tool. You help the user design logos, ads and merch (t-shirts, hoodies, mugs, caps). You can edit their design directly.
+  return `You are the design assistant built into "Imagination Studio", a local logo / ad / merch design tool. You help the user design logos, ads and merch (t-shirts, hoodies, mugs, caps). You can edit their design directly.
 
 OUTPUT FORMAT — reply with ONE JSON object and nothing else (no markdown fences):
 {"say": "short, friendly message to the user", "actions": [...], "suggestions": [{"label": "short button text", "actions": [...]}]}
@@ -8022,7 +8030,7 @@ Fonts must be exactly one of: ${fonts().join(', ')}.
 
 ACTIONS (each is an object with "do"):
 - {"do":"add_text","text":"...","x":600,"y":600,"fontSize":120,"fontFamily":"Anton","fill":"#ffffff","stroke":"#000000","strokeWidth":3,"bold":false,"italic":false,"charSpacing":0,"angle":0,"curve":0}   (curve -100..100 bends the text along an arc)
-- {"do":"add_shape","kind":"rect|ellipse|triangle|diamond|pentagon|hexagon|star|cross|rrect|heart|speech","x":600,"y":600,"w":300,"h":300,"fill":"#ff0000","stroke":"#000000","strokeWidth":0,"angle":0}
+- {"do":"add_shape","kind":"${(MS.shapeKinds || []).join('|')}","x":600,"y":600,"w":300,"h":300,"fill":"#ff0000","stroke":"#000000","strokeWidth":0,"angle":0}
 - {"do":"update","ref":"<layer ref>","text":"...","fill":"#..","stroke":"#..","strokeWidth":2,"fontFamily":"..","fontSize":100,"x":..,"y":..,"w":..,"h":..,"angle":..,"opacity":0..1}
 - {"do":"delete","ref":"<layer ref>"}
 - {"do":"order","ref":"<layer ref>","to":"front|back|forward|backward"}
@@ -8095,7 +8103,7 @@ function run(actions){
 function parse(text){
   const t = String(text).trim(), tp = s=>{ try{ const j = JSON.parse(s); return j && typeof j === 'object' ? j : null; }catch(e){ return null; } };
   let j = tp(t); if(!j){ const a = t.indexOf('{'), b = t.lastIndexOf('}'); if(a >= 0 && b > a) j = tp(t.slice(a, b + 1)); }
-  return j || { say:t };
+  return j || (/^(```(json)?\s*)?\{/.test(t) ? { say:'Claude’s reply was cut off before it finished, so nothing was changed. Try asking for it in smaller steps.' } : { say:t });   // half a JSON object = the reply hit its length limit
 }
 MS.initClaude = function(){
   const log = $('#claudeLog'), input = $('#claudeInput'), send = $('#claudeSend');
@@ -8111,8 +8119,9 @@ MS.initClaude = function(){
   async function askKey(promptText, image){
     const content = []; if(image) content.push({ type:'image', source:{ type:'base64', media_type:'image/png', data:image.replace(/^data:image\/png;base64,/, '') } });
     content.push({ type:'text', text:promptText });
-    const r = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'content-type':'application/json', 'x-api-key':getKey(), 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' }, body:JSON.stringify({ model:MODEL, max_tokens:4096, messages:[{ role:'user', content }] }) });
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method:'POST', headers:{ 'content-type':'application/json', 'x-api-key':getKey(), 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' }, body:JSON.stringify({ model:MODEL, max_tokens:16000, messages:[{ role:'user', content }] }) });
     const j = await r.json().catch(()=> ({})); if(!r.ok) throw new Error((j.error && j.error.message) || ('Claude API error ' + r.status));
+    if(j.stop_reason === 'max_tokens') throw new Error('That request was too big for one reply, so nothing was changed. Try asking for it in smaller steps.');
     return (j.content || []).filter(b=> b.type === 'text').map(b=> b.text).join('');
   }
   async function ask(txt){
@@ -8129,7 +8138,7 @@ MS.initClaude = function(){
       const reply = parse(answer); state.history.push({ role:'user', text:txt }, { role:'assistant', text:reply.say || '' });
       think.textContent = reply.say || '(done)';
       const res = run(reply.actions);
-      if(res.ok || res.bad) addMsg('sys', res.ok ? '✓ Applied ' + res.ok + ' change' + (res.ok > 1 ? 's' : '') + ' (Ctrl+Z undoes them all)' + (res.bad ? ' — ' + res.bad + ' couldn’t be applied' : '') : res.bad + ' change(s) couldn’t be applied');
+      if(res.ok || res.bad) addMsg('sys', res.ok ? '✓ Applied ' + res.ok + ' change' + (res.ok > 1 ? 's' : '') + ' (Ctrl+Z undoes them)' + (res.bad ? ' — ' + res.bad + ' couldn’t be applied' : '') : res.bad + ' change(s) couldn’t be applied');
       if(Array.isArray(reply.suggestions)) chips(think, reply.suggestions);
     }catch(e){ think.remove(); addMsg('err', String(e.message || e)); }
     finally{ state.busy = false; send.disabled = false; log.scrollTop = log.scrollHeight; }
@@ -9024,7 +9033,11 @@ MS.initAnim = function(){
   MS.addCommand && MS.addCommand({ title:'Animation timeline', cat:'Window', run:()=> toggle() });
   MS.addCommand && MS.addCommand({ title:'Add keyframe at playhead', cat:'Window', run:()=> keyHere() });
   MS.addCommand && MS.addCommand({ title:'Export animated GIF', cat:'File', run:()=>{ if(!A.on) toggle(true); openExport(); } });
-  document.addEventListener('keydown', e=>{ if((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a'){ e.preventDefault(); A.on ? collapse() : toggle(true); } if(A.on && e.code === 'Space' && !/input|textarea|select|button/i.test((e.target.tagName || ''))){ e.preventDefault(); e.stopPropagation(); A.playing ? stop() : play(); } }, true);
+  document.addEventListener('keydown', e=>{ if((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a'){ e.preventDefault(); A.on ? collapse() : toggle(true); } if(A.on && e.code === 'Space' && !e.repeat && !/input|textarea|select|button/i.test((e.target.tagName || ''))){ e.preventDefault(); spTap = { t:Date.now(), used:false }; } else if(spTap && e.code !== 'Space') spTap.used = true; }, true);
+  // Space: a quick tap plays / pauses; holding it still pans (Space+drag) and Space+P still previews
+  let spTap = null;
+  document.addEventListener('pointerdown', ()=>{ if(spTap) spTap.used = true; }, true);
+  document.addEventListener('keyup', e=>{ if(e.code !== 'Space' || !spTap) return; const tap = !spTap.used && Date.now() - spTap.t < 300; spTap = null; if(tap && A.on) A.playing ? stop() : play(); }, true);
   const pc = MS.collectExtra, pr = MS.restoreExtra;
   MS.collectExtra = ()=> Object.assign(pc ? pc() : {}, { anim:{ dur:A.dur, fps:A.fps, loop:A.loop, pingpong:A.pingpong, autokey:A.autokey, tracks:A.tracks } });
   MS.restoreExtra = ex=>{ const a = ex && ex.anim; A.tracks = (a && a.tracks) || {}; if(a){ A.dur = a.dur || 2; A.fps = a.fps || 12; A.loop = a.loop !== false; A.pingpong = !!a.pingpong; A.autokey = a.autokey !== false; } A.t = 0; A.sel = null; pr && pr(ex); if(bar){ $('#anDur').value = A.dur; $('#anFps').value = A.fps; $('#anLoop').checked = A.loop; $('#anPing').checked = A.pingpong; $('#anAuto').checked = A.autokey; } setTimeout(()=>{ if(Object.keys(A.tracks).length && !A.on) toggle(true); else A.on && renderRows(); if(Object.keys(A.tracks).length) applyAt(0); }, 80); };
@@ -9090,6 +9103,29 @@ const TOPICS = [
       { sel:'#btnSaveProject', title:'Save', text:'Saves an editable project file you can reopen later. With the .bat running it goes straight into MERCH\\logos.' },
       { sel:'#btnExport', title:'Export', text:'PNG, JPG, SVG, PDF and more — with exact size, DPI and file-size limit. Animated GIFs are under Animate.' },
     ] },
+  { id:'whatsnew', group:'Start here', title:"What's new in this version", sum:'The latest changes, straight from the release notes.', bullets:['Loading the release notes…'], steps:[] },
+  { id:'merch', group:'Workspaces', title:'Merch workspace and mockups', sum:'See your design on a tee, hoodie, tote, mug, poster, cap or sticker while you work.', bullets:['Click Merch in the top bar. The Merch tab on the right shows the product, driven live by your canvas.', 'Pick the product and its colour, front or back, and the print width in inches.', 'Move and resize the print on the product with the placement controls, then save the mockup as a picture.', 'Design in inches at 300 dpi (start screen ▸ Merch) so the print file is sharp.'],
+    steps:[
+      { sel:'#wsSwitch [data-ws="merch"]', title:'Merch workspace', text:'Switch here any time. Your design is never lost when you change workspace.', place:'bottom' },
+      { sel:'#mkGarment', fallback:'#page-merch', title:'Product', text:'Choose the product: tee, hoodie, tote, mug, poster, cap or sticker.', place:'left', before:()=>{ MS.setWorkspace('merch'); MS.showPage('merch'); } },
+      { sel:'#mkSwatches', fallback:'#page-merch', title:'Colour', text:'The product colour. It is for the preview only and is not printed.', place:'left', before:()=>{ MS.setWorkspace('merch'); MS.showPage('merch'); } },
+      { sel:'#mkStage', fallback:'#page-merch', title:'Live mockup', text:'Your artwork on the product. It updates as you edit the canvas.', place:'left', before:()=>{ MS.setWorkspace('merch'); MS.showPage('merch'); } },
+      { sel:'#mkSave', fallback:'#page-merch', title:'Save the mockup', text:'Saves this mockup as a picture, ready for a shop listing or a social post.', place:'left', before:()=>{ MS.setWorkspace('merch'); MS.showPage('merch'); } },
+    ] },
+  { id:'ads', group:'Workspaces', title:'Ad workspace and Ad Studio', sum:'Build an ad from your theme in four steps, then export every size at once.', bullets:['Click Ad in the top bar and open the Ad Studio tab.', 'Step 1, theme: drop in website files, pictures or notes. Step 2, campaign. Step 3, voice. Step 4, style.', 'Write & build ad puts real objects on the canvas, so you can edit anything afterwards.', '"Use my current design as the logo picture" pulls your logo in.', 'Export all sizes makes one ZIP with every ad size.'],
+    steps:[
+      { sel:'#wsSwitch [data-ws="ad"]', title:'Ad workspace', text:'Switch to Ad. The right-hand Ad Studio tab holds every step.', place:'bottom' },
+      { sel:'#adSrcDrop', fallback:'#page-ad', title:'1 · Theme', text:'Drop website files, pictures or notes here. They tell the writer what the ad is about.', place:'left', before:()=>{ MS.setWorkspace('ad'); MS.showPage('ad'); open('#adSrcDrop')(); } },
+      { sel:'#adCamp', fallback:'#page-ad', title:'2 · Campaign', text:'What the ad is for: a launch, a sale, an event…', place:'left', before:()=>{ MS.setWorkspace('ad'); MS.showPage('ad'); open('#adCamp')(); } },
+      { sel:'#adVoice', fallback:'#page-ad', title:'3 · Voice', text:'How it should sound: bold, friendly, premium…', place:'left', before:()=>{ MS.setWorkspace('ad'); MS.showPage('ad'); open('#adVoice')(); } },
+      { sel:'#adBuild', fallback:'#page-ad', title:'4 · Build it', text:'Writes the copy and lays out the ad on the canvas. Shuffle tries another layout.', place:'left', before:()=>{ MS.setWorkspace('ad'); MS.showPage('ad'); open('#adBuild')(); } },
+      { sel:'#adExportAll', fallback:'#page-ad', title:'Every size at once', text:'Exports the ad in all the sizes you picked, as one ZIP.', place:'left', before:()=>{ MS.setWorkspace('ad'); MS.showPage('ad'); open('#adExportAll')(); } },
+    ] },
+  { id:'buildfor', group:'Workspaces', title:'Build for: print, vector or game decal', sum:'Tells you, while you design, what will not survive the place the design is going.', bullets:['Canvas tab ▸ Build for: pick Print, Vector or Game decal.', 'It lists anything that will not work there (for example blur or pictures in a vector file), with Select and one-click fixes.', 'The actual file format is still chosen when you export.'],
+    steps:[
+      { sel:'#compatSeg', fallback:'#page-canvas', title:'Pick the target', text:'Print, Vector (SVG / PDF) or Game decal. The list below updates straight away.', place:'left', before:()=>{ MS.showPage('canvas'); open('#compatSeg')(); } },
+      { sel:'#compatList', fallback:'#compatSeg', title:'What to fix', text:'Each line names a problem. Select jumps to the item; the fix button solves it in one click.', place:'left', before:()=>{ MS.showPage('canvas'); open('#compatSeg')(); } },
+    ] },
   { id:'shapes', group:'Draw', title:'Shapes: square, circle, rounded corners', sum:'Draw rectangles, circles and rounded squares that snap to perfect.', bullets:['Drag to draw — near-equal sides snap to a perfect square or circle (Shift forces it, Alt draws from the centre).', 'Rounded square: pick a corner radius, or Full for pill / circle ends.', 'Click without dragging to drop a standard-size shape.'],
     steps:[
       { sel:'#toolbox [data-tool="rect"]', title:'Rectangle', text:'Drag on the canvas to draw. Hold the button or right-click it for more shapes: triangle, polygon, star, line, arrow.', place:'right', before:tool('rect') },
@@ -9120,6 +9156,12 @@ const TOPICS = [
       { sel:'#swArch', title:'Sliders', text:'Arch, Side bend, Wave, Bulge, Taper, Twist, Skew and Slope — mix any of them.', place:'left', before:sampleShape },
       { sel:'#swReset', title:'Reset warp', text:'Back to the original shape in one click.', place:'left', before:sampleShape },
     ] },
+  { id:'pen', group:'Draw', title:'Pen, node edit and pencil', sum:'Draw your own curves, then fine-tune every point.', bullets:['Pen (P): click to place corner points, click and drag for curves. Click the first point to close the shape; Enter or Esc finishes an open line.', 'Node edit (A): click a shape or path, then drag its points and curve handles. Click a line to add a point, double-click a point to switch corner and smooth, Delete removes it.', 'Pencil (B): draw freehand; size and smoothing are in the top bar.', 'Eraser (E) rubs out pictures; Magic wand (W) removes a colour.'],
+    steps:[
+      { sel:'#toolbox [data-tool="pen"]', title:'Pen', text:'Click for corners, drag for curves, click the first point to close.', place:'right', before:tool('pen') },
+      { sel:'#toolbox [data-tool="node"]', title:'Node edit', text:'Drag points and handles of any shape or path. Double-click a point to make it smooth or sharp.', place:'right', before:tool('node') },
+      { sel:'#toolbox [data-tool="pencil"]', title:'Pencil', text:'Freehand drawing. Size and smoothing sit in the bar at the top.', place:'right', before:tool('pencil') },
+    ] },
   { id:'colour', group:'Colour', title:'Fill, stroke and gradients', sum:'Solid colours, fades, patterns and outlines for any shape or text.', bullets:['Fill and Stroke each have a colour, None, and width.', '"Gradient / pattern…" opens fades and 50 patterns for the selection.', 'Gradients run across the whole word on warped text.'],
     steps:[
       { sel:'#propFillGroup', title:'Fill & stroke', text:'Colour swatches for fill and stroke, a None tick for each, stroke width, dashed or dotted lines and corner style.', place:'left', before:()=>{ sampleShape(); open('#propFill')(); } },
@@ -9134,12 +9176,17 @@ const TOPICS = [
       { sel:'#bgSceneGrid', title:'Scenes', text:'Click a scene to use it. Then change Base / Accent / Glow colours, Amount, Size and press the shuffle button for new variations.', place:'left', before:()=>{ page('fill')(); const b = $('#bgOn'); if(b && !b.checked){ b.checked = true; b.dispatchEvent(new Event('change', { bubbles:true })); } const m = $('#bgModes button[data-m="scene"]'); if(m) m.click(); } },
       { sel:'#bgGradePresets', title:'Colour grade', text:'One click for a mood — Cinematic, Vintage, Noir, Neon, Golden hour, Dreamy… then fine-tune with the sliders. It works on Scenes and Patterns.', place:'left', before:()=>{ page('fill')(); const m = $('#bgModes button[data-m="scene"]'); if(m) m.click(); } },
     ] },
-  { id:'effects', group:'Colour', title:'Shadow, glow, outline and distress', sum:'Stack as many effects as you like on the same element.', bullets:['Select something, then use Shadow / Glow / Outline in the top bar — the controls pop up right there.', 'They can all be on together; the glow always stays attached behind the element.', 'Distress wears the print away (grunge, scratches, halftone…).'],
+  { id:'effects', group:'Colour', title:'Effects and one-click Looks', sum:'Stack as many effects as you like on the same element.', bullets:['Select something, then use Shadow / Glow / Outline in the top bar — the controls pop up right there.', 'The Effects section also has 3D extrude, Long shadow, Echo trail, Neon tube, RGB split, Double outline and Round corners. They can all be on together.', 'Looks: one click sets a whole style (Sticker, Neon sign, Retro 3D, Comic pop, Glitch…).', 'Pass through knocks the element out of the layers beneath, like a stencil.', 'Distress wears the print away (grunge, scratches, halftone…).', 'Every effect is also in the Effects menu.'],
     steps:[
       { sel:'#optionsbar .fxbtns', title:'Shadow · Glow · Outline', text:'With an element selected, click one of these. It switches on and opens its controls beside the button. I selected a sample for you.', before:sampleAny },
       { sel:'#propTextShadowBtn', fallback:'#propTextGroup', title:'Also in the Text section', text:'Text has an "Effects…" button next to the colour swatch that opens the same pop-up.', place:'left', before:()=>{ sampleText(); } },
       { sel:'#fxStack', title:'The full stack', text:'The same controls sit permanently in the Effects section: shadow (colour, opacity, blur, distance, angle), glow (colour, size, brightness) and outline (colour, width). Turn on any combination.', place:'left', before:()=>{ sampleAny(); open('#fxStack')(); } },
+      { sel:'.fxLook', fallback:'#fxStack', title:'Looks', text:'Pick a one-click look to set several effects at once, then fine-tune any of them below.', place:'left', before:()=>{ sampleAny(); open('#fxStack')(); } },
       { sel:'#fxDistressKind', title:'Distress', text:'Grunge wear, scratches, spray speckle, halftone fade, cracked paint, rubber stamp or edge fade — with amount, grain size and a dice for new patterns.', place:'left', before:()=>{ sampleAny(); open('#fxDistressKind')(); } },
+    ] },
+  { id:'textures', group:'Colour', title:'Patterns and textures as fills', sum:'50 patterns and 35 textures work as fills for shapes and text, not just backgrounds.', bullets:['Select a shape or text, then Fill ▸ Gradient / pattern… in the Design tab.', 'Pick a pattern or texture, then set its scale, angle and colours.', 'The Background tab uses the same library for the whole artboard.'],
+    steps:[
+      { sel:'#btnMoreFills', fallback:'#page-design', title:'Gradient / pattern…', text:'Opens gradients, patterns and textures for the selected element.', place:'left', before:()=>{ sampleShape(); MS.showPage('design'); open('#btnMoreFills')(); } },
     ] },
   { id:'layers', group:'Organise', title:'Layers and groups', sum:'Reorder, hide, lock and group things — and save groups for reuse.', bullets:['Drag a box around several things and they become a locked group.', 'Save a group to your library; it is stored as a file in MERCH\\groups.', 'Hold Alt to pick one item inside a locked group.'],
     steps:[
@@ -9163,6 +9210,14 @@ const TOPICS = [
   { id:'mirror', group:'Organise', title:'Mirror and kaleidoscope', sum:'Symmetry copies for logos and patterns.', bullets:['Mirror copy: left-right or up-down.', 'Kaleidoscope / radial: repeat around a centre.'],
     steps:[
       { sel:'#optionsbar', title:'Symmetry buttons', text:'With something selected the bar shows Mirror copy and Kaleidoscope. They are also under Object ▸ Copy.', before:()=>{ tool('move')(); sampleAny(); } },
+    ] },
+  { id:'livesym', group:'Organise', title:'Live symmetry', sum:'Everything you draw is mirrored or repeated as you draw it.', bullets:['Click the Live symmetry button in the tools on the left; hover or right-click it for settings.', 'Choose mirror, radial or kaleidoscope and the number of copies. Ghost copies follow your pen as you draw.', 'The chip in the status bar shows it is on; click the chip to turn it off.'],
+    steps:[
+      { sel:'#toolbox [data-live]', title:'Live symmetry', text:'Turn it on here. Hover or right-click for mirror, radial or kaleidoscope settings.', place:'right' },
+    ] },
+  { id:'assets', group:'Organise', title:'Assets library and saved groups', sum:'Keep logos, badges and pieces you reuse, and drop them into any design.', bullets:['Select anything and save it from the Groups panel. It is stored in MERCH\\groups and in this browser.', 'Insert a saved item any time, download it as a file, or load a file someone sent you.'],
+    steps:[
+      { sel:'#leftPanel', title:'Assets & saved groups', text:'Your library sits in the left panel under Assets & saved groups.', place:'right', before:()=>{ const p = $('#leftPanel'); if(p && p.classList.contains('collapsed')) $('#lpToggle').click(); } },
     ] },
   { id:'animate', group:'Animate', title:'Animation and GIFs', sum:'Make elements move, loop them cleanly and export an animated GIF.', bullets:['Click an effect to animate the selected element instantly.', 'Keyframes: move the element at different times and it records.', 'Morph melts text from another font (or a warped shape) into its own.', 'Preview plays it full screen; Make seamless loop, then Export GIF.', 'Or just ask Claude: it can build and edit animations from a sentence.'],
     steps:[
@@ -9202,6 +9257,9 @@ const TOPICS = [
       { sel:'#statusbar', title:'Version', text:'The version number sits at the bottom right. Installed copies pick up new versions automatically and ask before switching.', place:'top' },
     ] },
 ];
+
+// "What's new" is filled from release.json, so the Help centre changes with every publish
+fetch('release.json', { cache:'no-store' }).then(r=> r.ok ? r.json() : null).then(j=>{ const t = TOPICS.find(x=> x.id === 'whatsnew'); if(t && j && Array.isArray(j.notes)){ t.title = "What's new in " + (j.version || 'this version'); t.bullets = j.notes; } }).catch(()=>{ const t = TOPICS.find(x=> x.id === 'whatsnew'); if(t) t.bullets = ['Release notes are shown on the title screen when a new version arrives.']; });
 
 /* ---------- the guided-tour overlay ---------- */
 let tour = null;
@@ -9258,9 +9316,9 @@ function openHelp(select){
     main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><div class="hc-links">${cur.links.map(l=> `<a class="hc-link" href="${esc(mailHref(l))}"${l.mail ? '' : ' target="_blank" rel="noopener noreferrer"'}><b>${esc(l.title)}</b><span>${esc(l.text)}</span><em>${esc(l.show)}</em></a>`).join('')}</div><div class="hc-sign">${esc(cur.sign)}</div>`;
   }
   function drawMain(){ if(cur.story) return drawStory(); if(cur.links) return drawLinks(); main.innerHTML = `<h2>${esc(cur.title)}</h2><p class="hc-sum">${esc(cur.sum)}</p><ul>${cur.bullets.map(b=> `<li>${esc(b)}</li>`).join('')}</ul>
-    <button class="btn primary" id="hcTour">${MS.icon('play')}Show me — guided tour (${cur.steps.length} steps)</button>
-    <div class="hc-steps">${cur.steps.map((s, i)=> `<div class="hc-step" data-i="${i}"><b>${i + 1}</b><div><strong>${esc(s.title)}</strong><span>${esc(s.text)}</span></div></div>`).join('')}</div><div class="hint">Click any step to jump straight to it on screen.</div>`;
-    $('#hcTour', main).onclick = ()=> startTour(cur.id); $$('.hc-step', main).forEach(el=> el.onclick = ()=> startTour(cur.id, +el.dataset.i)); }
+    ${cur.steps.length ? `<button class="btn primary" id="hcTour">${MS.icon('play')}Show me — guided tour (${cur.steps.length} steps)</button>
+    <div class="hc-steps">${cur.steps.map((s, i)=> `<div class="hc-step" data-i="${i}"><b>${i + 1}</b><div><strong>${esc(s.title)}</strong><span>${esc(s.text)}</span></div></div>`).join('')}</div><div class="hint">Click any step to jump straight to it on screen.</div>` : ''}`;
+    if(!cur.steps.length) return; $('#hcTour', main).onclick = ()=> startTour(cur.id); $$('.hc-step', main).forEach(el=> el.onclick = ()=> startTour(cur.id, +el.dataset.i)); }
   find.oninput = drawList; drawList(); drawMain(); setTimeout(()=> find.focus(), 50);
 }
 
@@ -9270,7 +9328,7 @@ MS.initHelp = function(){
   MS.addCommand && MS.addCommand({ title:'Help centre', cat:'Help', run:()=> openHelp() });
   MS.addCommand && MS.addCommand({ title:'Contact the creator', cat:'Help', run:()=> openHelp('contact') });
   MS.addCommand && MS.addCommand({ title:'Why Imagination Studio exists (our mission)', cat:'Help', run:()=> openHelp('why') });
-  TOPICS.filter(t=> t.steps.length).forEach(t=> MS.addCommand && MS.addCommand({ title:'Guided tour: ' + t.title, cat:'Help', run:()=> startTour(t.id) }));
+  TOPICS.filter(t=> t.steps && t.steps.length).forEach(t=> MS.addCommand && MS.addCommand({ title:'Guided tour: ' + t.title, cat:'Help', run:()=> startTour(t.id) }));
   if(!MS.store.get('helpHinted', false)){ setTimeout(()=>{ MS.store.set('helpHinted', true); toast('New here? Help ▸ Help centre (or F1) has a guided tour for every feature.', 7000); }, 9000); }
 };
 })();
@@ -9481,7 +9539,7 @@ const PRESETS = {
     { n:'Profile picture', d:'400 × 400', mode:'px', w:400, h:400 },
     { n:'Web banner', d:'970 × 250', mode:'px', w:970, h:250 },
   ],
-  Blank:[ { n:'Blank canvas', d:'Largest possible square', mode:'px', w:16370, h:16370 } ],
+  Blank:[ { n:'Blank canvas', d:'4096 × 4096 · safe everywhere (type up to 16370 in Custom size)', mode:'px', w:4096, h:4096 } ],
   'Decals & Games':[
     { n:'Decal 2048 square', d:'Gran Turismo / Forza style', mode:'px', w:2048, h:2048 },
     { n:'Decal 1024 square', d:'Small decal', mode:'px', w:1024, h:1024 },
@@ -9492,7 +9550,7 @@ const PRESETS = {
   ],
 };
 const HOME_CATS = [
-  ['Blank', 'newdoc', 'Blank canvas', 'Opens the largest possible square'],
+  ['Blank', 'newdoc', 'Blank canvas', 'A 4096 px square, or any size you like'],
   ['Animation', 'play', 'Animations & GIFs', 'Make logos and art move, export a GIF'],
   ['Logo', 'logo', 'Logos & print art', 'Artwork sized in inches for printing'],
   ['Merch', 'shirt', 'Merch & products', 'Tees, hoodies, mugs, caps, posters'],
@@ -9524,7 +9582,7 @@ MS.openNewDialog = async function(first){
       'Save as GIF makes the loop seamless for you.',
     ],
     Blank:[
-      'A blank canvas is 16370 × 16370 px — the biggest square the browser can export. Resize it any time from the document settings.',
+      'A blank canvas starts at 4096 × 4096 px, which exports safely on any device. Need more? Type up to 16370 in Custom size, or resize any time from the document settings.',
     ],
     Logo:[
       'Print logos are sized in inches — design big, you can scale down without losing quality.',
@@ -9608,7 +9666,6 @@ MS.openNewDialog = async function(first){
     if(!pick) return;
     const w = Math.max(.1, +$('#ndW', ov).value || pick.w), h = Math.max(.1, +$('#ndH', ov).value || pick.h), mode = $('#ndUnit button.active', ov).dataset.u === 'in' ? 'print' : 'social';
     const ws = ({ Logo:'logo', Merch:'merch', Ads:'ad', Social:'ad', Blank:'logo', Animation:'logo', 'Decals & Games':'logo' })[tab], name = $('#ndName', ov).value || 'Untitled design';
-    MS.clearAutosave();
     const target = tab === 'Decals & Games' ? 'game' : 'print';
     if(mode === 'print') MS.newDoc({ name, kind:ws, mode:'print', wIn:w, hIn:h, target }); else MS.newDoc({ name, kind:ws, mode:'social', wPx:w, hPx:h, target });
     if(tab === 'Merch') MS.setGarment('#ffffff', false); else MS.setGarment('#ffffff', true);
@@ -9650,7 +9707,7 @@ function menus(){
   const chk = k=> ()=> !!MS.prefs[k];
   return [
     { label:'File', items:[
-      { label:'New design…', icon:'newdoc', key:'Ctrl+N', action:()=> MS.openNewDialog() },
+      { label:'New design…', icon:'newdoc', key:(matchMedia('(display-mode: standalone)').matches ? 'Ctrl+N' : 'Alt+N'), action:()=> MS.openNewDialog() },
       { label:'Open project…', icon:'open', key:'Ctrl+O', action:()=> $('#projectLoadInput').click() },
       { label:'Open from saved files…', icon:'folder', key:'Ctrl+Shift+O', action:()=> MS.openFiles() },
       { label:'Import picture / SVG…', icon:'image', key:'Ctrl+Shift+I', action:()=> $('#fileImportInput').click() },
@@ -9688,6 +9745,8 @@ function menus(){
     { label:'Effects', items:[
       { label:'Drop shadow', icon:'drop', action:()=> MS.fx && MS.fx.quick('shadow') }, { label:'Outer glow', icon:'sun', action:()=> MS.fx && MS.fx.quick('glow') },
       { label:'Clean outline (stroke behind)', action:()=> MS.fx && MS.fx.quick('outline') }, { label:'Distress / worn print…', action:()=> MS.fx && MS.fx.quick('distress') },
+      '-', ...[['extrude', '3D extrude'], ['longshadow', 'Long shadow'], ['echo', 'Echo trail'], ['neon', 'Neon tube'], ['split', 'RGB split'], ['ring2', 'Double outline'], ['cutout', 'Pass through (knock-out)']].map(([k, label])=> ({ label, action:()=> MS.fx && MS.fx.quick(k) })),
+      { label:'One-click Looks & all settings…', action:()=> MS.fx && MS.fx.quick('panel') },
       '-', { label:'Remove all effects', action:()=> MS.fx && MS.fx.quick('clear') },
     ]},
     { label:'View', items:[
@@ -9726,7 +9785,7 @@ MS.showShortcuts = function(){
     ['Edit',[['Ctrl+Z','Undo'],['Ctrl+Shift+Z','Redo'],['Ctrl+C / X / V','Copy / cut / paste'],['Ctrl+D','Duplicate'],['Ctrl+A','Select all'],['Del','Delete'],['Ctrl+G','Group'],['Ctrl+Shift+G','Ungroup'],['Arrows','Nudge (Shift = 10px)']]],
     ['Arrange',[[']  /  [','Forward / backward'],['Ctrl+]  /  [','To front / back'],['Alt-drag','Move without snapping'],['Shift-rotate','15° steps']]],
     ['View',[['Ctrl+0','Fit to screen'],['Ctrl+1','100%'],['Ctrl+2','Zoom to selection'],['Ctrl + wheel','Zoom at cursor'],["Ctrl+'",'Grid'],['Ctrl+K','Command palette']]],
-    ['File',[['Ctrl+N','New'],['Ctrl+S','Save project'],['Ctrl+E','Export'],['Ctrl+Shift+E','Quick export PNG'],['Ctrl+Shift+F','Font browser']]]];
+    ['File',[[(matchMedia('(display-mode: standalone)').matches ? 'Ctrl+N' : 'Alt+N'),'New (Ctrl+N in the installed app)'],['Ctrl+S','Save project'],['Ctrl+E','Export'],['Ctrl+Shift+E','Quick export PNG'],['Ctrl+Shift+F','Font browser']]]];
   MS.modal({ title:'Keyboard shortcuts', med:true, footer:false, body:'<div class="kbd-grid">' + rows.map(([c, l])=>`<div class="cat">${c}</div>` + l.map(([k, v])=>`<div><span>${v}</span><kbd>${k}</kbd></div>`).join('')).join('') + '</div>' });
 };
 MS.showAbout = function(){
@@ -9764,7 +9823,7 @@ function wireKeys(){
     if(mod && ((k === 'z' && e.shiftKey) || k === 'y') && !inField){ e.preventDefault(); MS.redo(); return; }
     if(mod && k === 's'){ e.preventDefault(); e.shiftKey ? MS.saveProjectAs() : MS.saveProject(); return; }
     if(mod && k === 'e'){ e.preventDefault(); e.shiftKey ? (MS.quickExport && MS.quickExport()) : MS.openExport(); return; }
-    if(mod && k === 'n'){ e.preventDefault(); MS.openNewDialog(); return; }
+    if((mod || (e.altKey && !e.shiftKey)) && k === 'n'){ e.preventDefault(); MS.openNewDialog(); return; }   // browsers keep Ctrl+N for a new window, so Alt+N works too
     if(mod && k === 'o' && !e.shiftKey){ e.preventDefault(); $('#projectLoadInput').click(); return; }
     if(mod && e.shiftKey && k === 'f'){ e.preventDefault(); MS.openFontBrowser(); return; }
     if(mod && e.shiftKey && k === 'i'){ e.preventDefault(); $('#fileImportInput').click(); return; }
@@ -9856,15 +9915,6 @@ async function showSplash(artP){
 }
 
 /* ============================ STARTUP ============================ */
-async function recover(){
-  const saved = await MS.readAutosave();
-  if(!saved || !saved.payload || !(saved.payload.canvasJSON.objects || []).length) return false;
-  const when = new Date(saved.savedAt).toLocaleString();
-  return new Promise(res=>{
-    const m = MS.modal({ title:'Restore your last session?', sticky:true, body:`<div>We found unsaved work from <b>${when}</b>${saved.payload.meta && saved.payload.meta.name ? ' ("' + MS.esc(saved.payload.meta.name) + '")' : ''} — the app may have closed unexpectedly.</div>`,
-      buttons:[{ label:'Start fresh', action:()=>{ MS.clearAutosave(); res(false); } }, { label:'Restore it', primary:true, icon:'history', action:()=>{ MS.loadProject(saved.payload, ()=>{ toast('Session restored.'); res(true); }); } }], onClose:()=> res(false) });
-  });
-}
 document.addEventListener('DOMContentLoaded', async ()=>{
   const mk = n=> performance.mark('ms:' + n);   // start-up timing marks (performance.getEntriesByType('mark') in the console)
   const artP = probeTitle(); mk('boot-start'); MS.initUI(); mk('initUI'); MS.initCore(); mk('initCore'); MS.tools.init(); mk('tools'); MS.initPanels(); mk('panels');

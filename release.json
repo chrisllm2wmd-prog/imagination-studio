@@ -1,10 +1,13 @@
 {
-  "version": "4.21 beta",
+  "version": "4.22 beta",
   "date": "2026-10-28",
   "notes": [
-    "One shapes button: hover to see every shape, pick one, then choose Filled or Outline.",
-    "Outline width now lives only in the Design panel (default 10, slider up to 300 with fine control).",
-    "Corner radius for any shape or text, with a corner picker: round any combination of the 4 corners.",
-    "Outline, 3D extrude and double outline now follow the rounded corners."
+    "Export is always visible on laptop screens: the top bar now fits 1280 and 1366 px wide.",
+    "Undo and redo now cover animation, ad settings and linked groups too.",
+    "Safer work: a new design no longer wipes your crash-recovery copy, and closing the tab with unsaved changes asks first.",
+    "In the timeline, tap Space to play or pause; hold Space to pan as usual.",
+    "Every effect is now in the Effects menu, and the Design panel opens the right section for what you select.",
+    "New Help topics: Merch, Ads, Build for, Pen and node edit, Textures, Live symmetry, Assets and What's new.",
+    "Blank canvas now starts at a safe 4096 px (Maximum is still there)."
   ]
 }
