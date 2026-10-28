@@ -1,10 +1,10 @@
 {
-  "version": "4.20 beta",
+  "version": "4.21 beta",
   "date": "2026-10-28",
   "notes": [
-    "Every shape that can be a perfect circle or square now snaps to it and the read-out turns green.",
-    "Corners slider in the Design panel now rounds all shapes (stars, diamonds, hexagons, triangles and more) and text.",
-    "Outline width now works on every shape, with three times the range and a wider slider.",
-    "Fixed the toolbar tooltip covering the Solid / Outline choices."
+    "One shapes button: hover to see every shape, pick one, then choose Filled or Outline.",
+    "Outline width now lives only in the Design panel (default 10, slider up to 300 with fine control).",
+    "Corner radius for any shape or text, with a corner picker: round any combination of the 4 corners.",
+    "Outline, 3D extrude and double outline now follow the rounded corners."
   ]
 }

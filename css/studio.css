@@ -623,3 +623,9 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .shape-style .ss-grid button{min-width:0;width:auto;justify-content:center;padding:6px 0;} .shape-style .ss-grid .ic{width:18px;height:18px;}
 
 .shape-style{z-index:950;min-width:270px;} /* above the toolbar tooltip so it never hides the Solid / Outline rows */
+
+/* corner picker: four toggles, any combination of corners gets the radius */
+.cornerpick{display:grid;grid-template-columns:repeat(2,26px);gap:3px;}
+.cornerpick button{width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;background:var(--bg0);border:1px solid var(--line2);border-radius:5px;color:var(--dim);cursor:pointer;}
+.cornerpick button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
+.cornerpick button:hover{color:var(--txt);} .cornerpick button.on{color:#fff;background:var(--acc);border-color:var(--acc);}

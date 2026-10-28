@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.20 beta';
+window.IMAGINATION_VERSION = '4.21 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -1504,7 +1504,7 @@ const WORKING_PPI = 100;                // design px per inch (fixed working res
 const MAX_HISTORY = 80;
 const MAX_HISTORY_BYTES = 160 * 1024 * 1024;
 const SERIALIZE_PROPS = ['name','selectable','evented','hasControls','lockMovementX','lockMovementY','lockScalingX','lockScalingY','lockRotation',
-  '__animId','_isCurvedText','_curveSourceText','_curveStyle','_curveAmount','_curveFade','_warp','_layout','__isBackground','__fillMeta','__fx','__lockedLayer','__linkId','__bgMode','__kind','__round','__outlined','paintFirst','strokeUniform','globalCompositeOperation'];
+  '__animId','_isCurvedText','_curveSourceText','_curveStyle','_curveAmount','_curveFade','_warp','_layout','__isBackground','__fillMeta','__fx','__lockedLayer','__linkId','__bgMode','__kind','__round','__corners','__outlined','paintFirst','strokeUniform','globalCompositeOperation'];
 MS.WORKING_PPI = WORKING_PPI;
 MS.SERIALIZE_PROPS = SERIALIZE_PROPS;
 
@@ -2494,11 +2494,19 @@ function arrowPoints(len, thick, headL, headW){
   const t = thick / 2, hw = headW / 2, bodyEnd = len - headL;
   return [{x:0,y:-t},{x:bodyEnd,y:-t},{x:bodyEnd,y:-hw},{x:len,y:0},{x:bodyEnd,y:hw},{x:bodyEnd,y:t},{x:0,y:t}];
 }
-/* rounded corners for any polygon-based shape (stars, diamonds, hexagons ... and the triangle): o.__round = radius in the shape's own units */
-function traceRounded(ctx, pts, r){
-  const n = pts.length; ctx.beginPath();
+/* rounded corners. o.__round = radius for polygon-based shapes (stars, diamonds, hexagons ... and the triangle), in the shape's own units.
+   o.__corners = [TL, TR, BR, BL] (1 = rounded): which corners get the radius. A polygon vertex belongs to the bbox corner it sits nearest;
+   vertices on a centre line (a triangle's apex) count for both corners beside it. */
+function cornerMask(pts, c){
+  if(!c || (c[0] && c[1] && c[2] && c[3])) return null;
+  const xs = pts.map(p=> p.x), ys = pts.map(p=> p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, e = (x1 - x0 + y1 - y0) * 1e-4 + 1e-9;
+  return pts.map(p=>{ const l = p.x <= cx + e, r = p.x >= cx - e, t = p.y <= cy + e, b = p.y >= cy - e; return !!((t && l && c[0]) || (t && r && c[1]) || (b && r && c[2]) || (b && l && c[3])); });
+}
+function traceRounded(ctx, pts, r, corners){
+  const n = pts.length, mask = cornerMask(pts, corners); ctx.beginPath();
   for(let i = 0; i < n; i++){
-    const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], d1 = Math.hypot(p0.x - p1.x, p0.y - p1.y), d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y), rr = Math.min(r, d1 / 2, d2 / 2);
+    const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], d1 = Math.hypot(p0.x - p1.x, p0.y - p1.y), d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y), rr = mask && !mask[i] ? 0 : Math.min(r, d1 / 2, d2 / 2);
     const a = { x:p1.x + (p0.x - p1.x) * rr / (d1 || 1), y:p1.y + (p0.y - p1.y) * rr / (d1 || 1) }, b = { x:p1.x + (p2.x - p1.x) * rr / (d2 || 1), y:p1.y + (p2.y - p1.y) * rr / (d2 || 1) };
     if(i === 0) ctx.moveTo(a.x, a.y); else ctx.lineTo(a.x, a.y);
     ctx.quadraticCurveTo(p1.x, p1.y, b.x, b.y);
@@ -2508,21 +2516,50 @@ function traceRounded(ctx, pts, r){
   const polyCommon = fabric.Polygon.prototype.commonRender;
   fabric.Polygon.prototype.commonRender = function(ctx){
     if(!(this.__round > 0) || !this.points || this.points.length < 3) return polyCommon.call(this, ctx);
-    const ox = this.pathOffset.x, oy = this.pathOffset.y; traceRounded(ctx, this.points.map(p=> ({ x:p.x - ox, y:p.y - oy })), this.__round); return true;
+    const ox = this.pathOffset.x, oy = this.pathOffset.y; traceRounded(ctx, this.points.map(p=> ({ x:p.x - ox, y:p.y - oy })), this.__round, this.__corners); return true;
   };
   const triRender = fabric.Triangle.prototype._render;
   fabric.Triangle.prototype._render = function(ctx){
     if(!(this.__round > 0)) return triRender.call(this, ctx);
-    const w = this.width / 2, h = this.height / 2; traceRounded(ctx, [{ x:-w, y:h }, { x:0, y:-h }, { x:w, y:h }], this.__round); ctx.closePath(); this._renderPaintInOrder(ctx);
+    const w = this.width / 2, h = this.height / 2; traceRounded(ctx, [{ x:-w, y:h }, { x:0, y:-h }, { x:w, y:h }], this.__round, this.__corners); ctx.closePath(); this._renderPaintInOrder(ctx);
+  };
+  // a rectangle with only some corners rounded (all four rounded stays Fabric's own rx / ry)
+  const rectRender = fabric.Rect.prototype._render;
+  fabric.Rect.prototype._render = function(ctx){
+    const c = this.__corners;
+    if(!c || (c[0] && c[1] && c[2] && c[3]) || !(this.rx > 0 || this.ry > 0)) return rectRender.call(this, ctx);
+    const w = this.width, h = this.height, x = -w / 2, y = -h / 2, rx = Math.min(this.rx || this.ry, w / 2), ry = Math.min(this.ry || this.rx, h / 2), K = 1 - .5522847498;
+    const [tl, tr, br, bl] = c.map(v=> v ? 1 : 0);
+    ctx.beginPath(); ctx.moveTo(x + rx * tl, y);
+    ctx.lineTo(x + w - rx * tr, y); ctx.bezierCurveTo(x + w - rx * tr * K, y, x + w, y + ry * tr * K, x + w, y + ry * tr);
+    ctx.lineTo(x + w, y + h - ry * br); ctx.bezierCurveTo(x + w, y + h - ry * br * K, x + w - rx * br * K, y + h, x + w - rx * br, y + h);
+    ctx.lineTo(x + rx * bl, y + h); ctx.bezierCurveTo(x + rx * bl * K, y + h, x, y + h - ry * bl * K, x, y + h - ry * bl);
+    ctx.lineTo(x, y + ry * tl); ctx.bezierCurveTo(x, y + ry * tl * K, x + rx * tl * K, y, x + rx * tl, y);
+    ctx.closePath(); this._renderPaintInOrder(ctx);
   };
 })();
-MS.roundable = o=> !!o && (o.type === 'rect' || o.type === 'polygon' || o.type === 'triangle');
+// every drawn element and text can be rounded (pictures and straight lines cannot); how depends on the kind:
+// rectangles use rx / ry, polygons and triangles trace their own rounded outline, everything else (text, paths, groups) takes the Round corners effect
+MS.roundable = o=> !!o && !['image', 'line', 'activeSelection'].includes(o.type) && !o.__isBackground;
+MS.roundableSel = o=> !!o && (o.type === 'activeSelection' ? o.getObjects().some(MS.roundable) : MS.roundable(o));
+MS.roundGet = o=> o.type === 'rect' ? (o.rx || 0) : (o.type === 'polygon' || o.type === 'triangle') ? (o.__round || 0) : MS.fx.getRound(o);
+MS.roundSet = (o, v)=>{ if(o.type === 'rect') o.set({ rx:v, ry:v }); else if(o.type === 'polygon' || o.type === 'triangle') o.__round = v; else MS.fx.setRound(o, v); o.dirty = true; };
+MS.cornersGet = o=> (o && o.__corners) || [1, 1, 1, 1];
+MS.cornersSet = (o, c)=>{ o.__corners = c.map(v=> v ? 1 : 0); o.dirty = true; };
+// the four corner toggles (Top-left, Top-right / Bottom-left, Bottom-right): any combination
+MS.cornerPickerHtml = c=>{
+  const d = ['M2 14V8Q2 2 8 2H14', 'M2 2H8Q14 2 14 8V14', 'M14 14H8Q2 14 2 8V2', 'M14 2V8Q14 14 8 14H2'], names = ['Top-left', 'Top-right', 'Bottom-left', 'Bottom-right'], idx = [0, 1, 3, 2];
+  return '<div class="cornerpick">' + idx.map((k, j)=> `<button type="button" data-corner="${k}" class="${c[k] ? 'on' : ''}" data-tip="${names[j]} corner: click to round / keep sharp"><svg viewBox="0 0 16 16"><path d="${d[j]}"/></svg></button>`).join('') + '</div>';
+};
+MS.bindCornerPicker = (root, get, set)=>{
+  root.addEventListener('click', e=>{ const b = e.target.closest('[data-corner]'); if(!b) return; const c = get().slice(); c[+b.dataset.corner] = c[+b.dataset.corner] ? 0 : 1; set(c); root.innerHTML = MS.cornerPickerHtml(c); });
+};
 // outline style applied after the fact to shapes that are not made by makeShape (the shape library, heart / speech / cross)
 function outlineStyle(o){
   if(!o || SHAPE_OPT.style !== 'line') return o;
   o.set({ fill:'', stroke: S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke, strokeWidth:Math.max(.5, SHAPE_OPT.outlineW), strokeUniform:true }); return o;
 }
-const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, outlineW:MS.store.get('outlineW', 6), style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
+const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, genR:0, corners:[1, 1, 1, 1], sides:6, points:5, inner:.42, lineW:6, outlineW:10, style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only); outlineW is changed in the Design panel, not where the shape is picked
 
 // more drag-to-draw shapes: outlines as fractions of the drawn box (polygons) or as path data in a 100-unit box (curves)
 const SHAPE_PTS = {
@@ -2564,7 +2601,11 @@ function makeShape(kind, x0, y0, w, h, p0, p1){
     // Polygon's own origin is its bbox top-left; shift so that the arrow tail sits on p0
     o.set({ originX:'left', originY:'center' });
   }
-  if(o) o.__kind = kind;
+  if(o){
+    o.__kind = kind;
+    if(!SHAPE_OPT.corners.every(Boolean)) o.__corners = SHAPE_OPT.corners.slice();
+    if(SHAPE_OPT.genR > 0 && kind !== 'rect' && kind !== 'rrect' && kind !== 'ellipse' && kind !== 'line' && kind !== 'arrow') MS.roundSet(o, SHAPE_OPT.genR);
+  }
   return o;
 }
 function describe(kind){ return { rect:'Rectangle', rrect:'Rounded rectangle', ellipse:'Ellipse', triangle:'Triangle', polygon:'Polygon', star:'Star', line:'Line', arrow:'Arrow', diamond:'Diamond', rtriangle:'Right triangle', pentagon:'Pentagon', hexagon:'Hexagon', octagon:'Octagon', parallelogram:'Parallelogram', trapezoid:'Trapezoid', chevron:'Chevron', plus:'Plus', blockarrow:'Block arrow', darrow:'Double arrow', bolt:'Lightning bolt', heart:'Heart', cloud:'Cloud', moon:'Moon', ring:'Ring', semicircle:'Semicircle', speech:'Speech bubble', star4:'4-point star' }[kind] || kind; }
@@ -2654,7 +2695,6 @@ reg({ id:'zoom', label:'Zoom', icon:'zoom', key:'Z', lock:true, cursor:'zoom-in'
  ['moon','moon','','Moon / crescent'],['ring','ring','','Ring / donut'],['semicircle','semicircle','','Semicircle'],['speech','speech','','Speech bubble'],['star4','star4','','4-point star']].forEach(([k, ic, key, label])=>{
   const d = shapeTool(k, ic, key, label);
   d.isShape = true;
-  if(k === 'ellipse' || k === 'rrect') d.group = null;   // own toolbox buttons, not in the shapes flyout
   d.hint = label + ': drag to draw · snaps to a perfect square/circle (Shift forces it) · 45° · Alt = from centre. Switches back to Move / Select when you let go.';
   reg(d);
 });
@@ -3014,7 +3054,7 @@ T.buildToolbox = function(){
   };
   const sep = ()=>{ const s = document.createElement('div'); s.className = 'tool-sep'; box.appendChild(s); };
   add('move'); if(defs.node) add('node'); add('hand'); add('zoom'); sep();
-  add('rect', 'shapes'); add('rrect'); add('ellipse'); add('pen'); add('pencil'); add('text'); sep();
+  add('rect', 'shapes'); add('pen'); add('pencil'); add('text'); sep();
   add('image'); add('wand'); add('eraser'); add('dropper'); sep();
   MS.liveSym && MS.liveSym.addButton(box);
   // colour chips
@@ -3028,27 +3068,28 @@ T.buildToolbox = function(){
   $('#swSwap').addEventListener('click', swapColors);
   T.syncSwatches();
 };
-// hover a shape tool: pick Solid or Outline (line) for everything drawn with the shape tools; remembered
+// hover the shapes button: every shape in one menu; picking one asks Filled or Outline (remembered). The outline width is not chosen here: it lives in the Design panel
 function styleHover(b){
   let timer = null, pop = null, leave = null;
   const kill = ()=>{ clearTimeout(timer); clearTimeout(leave); if(pop){ pop.remove(); pop = null; document.removeEventListener('mousedown', away, true); } };
   const away = e=>{ if(pop && !pop.contains(e.target) && !b.contains(e.target)) kill(); };
+  const askStyle = id=>{
+    const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
+    pop.innerHTML = `<div class="ss-h hint">${MS.esc(defs[id].label.replace(/ \(.*/, ''))}: draw it as</div>` + row('solid', 'Filled', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>');
+    pop.dataset.pick = id;
+  };
   const open = ()=>{
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
-    const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
-    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><input type="range" id="ssW" min="0.5" max="300" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:150px"></div>`;
-    if(b.dataset.group){   // the shapes button: every drag-to-draw shape right here too
-      const items = order.filter(id=> defs[id].group === b.dataset.group);
-      pop.insertAdjacentHTML('beforeend', '<div class="ss-h hint">Shapes</div><div class="ss-grid">' + items.map(id=> `<button data-tool="${id}" class="${S.tool === id ? 'active' : ''}" title="${MS.esc(defs[id].label)}">${MS.icon(defs[id].icon)}</button>`).join('') + '</div>');
-    }
+    const items = order.filter(id=> defs[id].group === b.dataset.group);
+    pop.innerHTML = '<div class="ss-h hint">Shapes</div><div class="ss-grid">' + items.map(id=> `<button data-tool="${id}" class="${S.tool === id ? 'active' : ''}" title="${MS.esc(defs[id].label)}">${MS.icon(defs[id].icon)}</button>`).join('') + '</div>';
     document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
     pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
-    pop.addEventListener('input', e=>{ if(e.target.id === 'ssW'){ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } } });
     pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return;
-      if(x.dataset.tool){ T.set(x.dataset.tool); kill(); return; } SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(b.dataset.tool); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines.' : 'Shapes are drawn solid.', 1800); });
+      if(x.dataset.tool){ if(x.dataset.tool === 'line' || x.dataset.tool === 'arrow'){ T.set(x.dataset.tool); kill(); } else askStyle(x.dataset.tool); return; }
+      SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(pop.dataset.pick); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines (set the width in Design).' : 'Shapes are drawn filled.', 1800); });
     setTimeout(()=> document.addEventListener('mousedown', away, true), 0);
   };
-  b.addEventListener('mouseenter', ()=>{ clearTimeout(leave); if(S.tool === 'move' || true){ timer = setTimeout(open, 450); } });
+  b.addEventListener('mouseenter', ()=>{ clearTimeout(leave); timer = setTimeout(open, 450); });
   b.addEventListener('mouseleave', ()=>{ clearTimeout(timer); leave = setTimeout(()=>{ if(pop && !pop.matches(':hover')) kill(); }, 350); });
 }
 function openFlyout(btn, group){
@@ -3093,12 +3134,13 @@ T.renderOptions = function(){
     <div class="og"><label>Fill</label>${swatchHtml('obFill', S.fill)}<label class="chk mut"><input type="checkbox" id="obNoFill" ${S.noFill ? 'checked' : ''}>None</label></div>
     <div class="og"><label>Stroke</label>${swatchHtml('obStroke', S.stroke)}<label class="chk mut"><input type="checkbox" id="obNoStroke" ${S.noStroke ? 'checked' : ''}>None</label>
       <div class="f" style="width:74px"><span data-scrub="obStrokeW">W</span><input type="number" id="obStrokeW" min="0" step="0.5" value="${S.strokeW}"></div></div>`;
-  const radKey = kind === 'rrect' ? 'radius' : 'rectR', rmax = Math.max(400, Math.round(Math.min(S.doc.wPx, S.doc.hPx) / 2));
-  const radiusHtml = ()=> `<div class="og radius-og"><label>Corner radius${kind === 'rect' ? ' (0 = sharp)' : ''}</label><input type="range" id="obRadius" min="0" max="${rmax}" value="${Math.min(rmax, SHAPE_OPT[radKey])}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obRadiusN" min="0" step="1" value="${SHAPE_OPT[radKey]}"><em>px</em></div>
-      <span class="chips">${[0, 8, 24, 48, 100, 200, 500, 1000].filter(r=> r <= rmax).map(r=> `<span class="chip" data-radius="${r}">${r}</span>`).join('') + '<span class="chip" data-radius="100000" data-tip="Fully rounded ends / circle">Full</span>'}</span></div>`;
+  const radKey = kind === 'rrect' ? 'radius' : kind === 'rect' ? 'rectR' : 'genR', rmax = Math.max(400, Math.round(Math.min(S.doc.wPx, S.doc.hPx) / 2));
+  const radiusHtml = ()=> `<div class="og radius-og"><label>Corner radius (0 = sharp)</label><input type="range" id="obRadius" min="0" max="${rmax}" value="${Math.min(rmax, SHAPE_OPT[radKey])}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obRadiusN" min="0" step="1" value="${SHAPE_OPT[radKey]}"><em>px</em></div>
+      <span class="chips">${[0, 8, 24, 48, 100, 200, 500, 1000].filter(r=> r <= rmax).map(r=> `<span class="chip" data-radius="${r}">${r}</span>`).join('') + '<span class="chip" data-radius="100000" data-tip="Fully rounded ends / circle">Full</span>'}</span></div>
+      <div class="og"><label>Corners</label><span id="obCorners">${MS.cornerPickerHtml(SHAPE_OPT.corners)}</span></div>`;
   if(shapeLike){
-    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><input type="range" id="obOutW" min="0.5" max="300" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:190px"></div>`;
-    if(kind === 'rect' || kind === 'rrect') h += radiusHtml();
+    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div>${SHAPE_OPT.style === 'line' ? '<span class="hint">line width: Design panel</span>' : ''}</div>`;
+    if(kind !== 'line' && kind !== 'arrow' && kind !== 'ellipse') h += radiusHtml();
     h += fillStroke();
     if(kind === 'polygon') h += `<div class="og"><label>Sides</label><div class="f" style="width:64px"><input type="number" id="obSides" min="3" max="24" value="${SHAPE_OPT.sides}" style="padding-left:8px"></div></div>`;
     if(kind === 'star') h += `<div class="og"><label>Points</label><div class="f" style="width:64px"><input type="number" id="obPoints" min="3" max="24" value="${SHAPE_OPT.points}" style="padding-left:8px"></div><label>Inner</label><input type="range" id="obInner" min="10" max="90" value="${Math.round(SHAPE_OPT.inner*100)}" style="width:90px"></div>`;
@@ -3141,7 +3183,7 @@ T.renderOptions = function(){
       if(isText) h += `<div class="og"><button class="font-btn" id="obFont" style="width:190px;height:26px"><span class="fp" style="font-family:'${(a._isCurvedText ? (a._curveStyle||{}).fontFamily : a.fontFamily)||S.font}'">${MS.esc((a._isCurvedText ? (a._curveStyle||{}).fontFamily : a.fontFamily)||S.font)}</span><i data-i="chevd"></i></button>
         <div class="f" style="width:70px"><span data-scrub="obTextSize">Size</span><input type="number" id="obTextSize" min="4" value="${Math.round((a._isCurvedText ? (a._curveStyle||{}).fontSize : a.fontSize)||48)}"></div><label>Text colour</label>${swatchHtml('obTextFill', hexOr(a._isCurvedText ? (a._curveStyle||{}).fill : a.fill, '#222222'))}</div>`;
       h += `<div class="og fxbtns">` + [['shadow', 'drop', 'Shadow'], ['glow', 'sun', 'Glow'], ['outline', 'stroke', 'Outline']].map(([k, ic, l])=> `<button class="btn sm ${MS.fx && MS.fx.kindOn(a, k) ? 'active' : ''}" data-act="fx" data-fx="${k}" data-tip="${l}: click to turn on and set it up (they can all be on together)"><i data-i="${ic}"></i>${l}</button>`).join('') + `</div>`;
-      if(a.type === 'rect' && !multi) h += `<div class="og radius-og"><label>Corner radius</label><input type="range" id="obSelRadius" min="0" max="${Math.round(Math.min(a.width, a.height) / 2)}" value="${Math.round(a.rx || 0)}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obSelRadiusN" min="0" step="1" value="${Math.round(a.rx || 0)}"><em>px</em></div><span class="chip" data-selradius="full" data-tip="Fully rounded ends / circle">Full</span></div>`;
+      if(!multi && MS.roundable(a)){ const rmx = Math.max(10, Math.round(Math.min(a.getScaledWidth(), a.getScaledHeight()) / 2)), rv = Math.round(MS.roundGet(a)); h += `<div class="og radius-og"><label>Corner radius</label><input type="range" id="obSelRadius" min="0" max="${Math.max(rmx, rv)}" value="${rv}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obSelRadiusN" min="0" step="1" value="${rv}"><em>px</em></div><span class="chip" data-selradius="full" data-tip="Fully rounded ends / circle">Full</span></div><div class="og"><label>Corners</label><span id="obSelCorners">${MS.cornerPickerHtml(MS.cornersGet(a))}</span></div>`; }
       h += `<div class="og tb-row"><button class="tb" data-act="flipH" data-tip="Flip horizontal"><i data-i="fliph"></i></button><button class="tb" data-act="flipV" data-tip="Flip vertical"><i data-i="flipv"></i></button>
         <button class="tb" data-act="front" data-tip="Bring to front"><i data-i="front"></i></button><button class="tb" data-act="back" data-tip="Send to back"><i data-i="back"></i></button>
         ${multi ? '<button class="tb" data-act="group" data-tip="Group"><i data-i="group"></i></button>' : ''}${a.type === 'group' && !a._isCurvedText ? '<button class="tb" data-act="ungroup" data-tip="Ungroup"><i data-i="ungroup"></i></button>' : ''}</div>`;
@@ -3163,7 +3205,7 @@ function bindOptions(bar){
   on('obStrokeW', 'input', e=>{ S.strokeW = Math.max(0, +e.target.value || 0); });
   const setR = v=>{ const key = S.tool === 'rrect' ? 'radius' : 'rectR'; SHAPE_OPT[key] = Math.max(0, +v || 0); const r = $('#obRadius', bar), n = $('#obRadiusN', bar); if(r){ r.value = Math.min(+r.max, SHAPE_OPT[key]); MS.fillRange(r); } if(n && document.activeElement !== n) n.value = Math.min(SHAPE_OPT[key], r ? +r.max : SHAPE_OPT[key]); };
   on('obRadius', 'input', e=> setR(e.target.value)); on('obRadiusN', 'input', e=> setR(e.target.value));
-  const setSel = v=>{ const a = cv().getActiveObject(); if(!a || a.type !== 'rect') return; const r = Math.max(0, Math.min(+v || 0, a.width / 2, a.height / 2)); a.set({ rx:r, ry:r }); a.dirty = true; a.setCoords(); cv().requestRenderAll(); const sl = $('#obSelRadius', bar); if(sl){ sl.value = r; MS.fillRange(sl); } clearTimeout(setSel._t); setSel._t = setTimeout(()=>{ MS.commit('Corner radius'); }, 350); };
+  const setSel = v=>{ const a = cv().getActiveObject(); if(!a || !MS.roundable(a)) return; const r = Math.max(0, +v || 0), cap = Math.round(Math.min(a.getScaledWidth(), a.getScaledHeight()) / 2); MS.roundSet(a, a.type === 'rect' ? Math.min(r, a.width / 2, a.height / 2) : Math.min(r, cap)); MS.dirtyObj(a); a.setCoords(); cv().requestRenderAll(); const sl = $('#obSelRadius', bar); if(sl){ sl.value = Math.min(r, cap); MS.fillRange(sl); } clearTimeout(setSel._t); setSel._t = setTimeout(()=>{ MS.commit('Corner radius'); }, 350); };
   on('obSelRadius', 'input', e=> setSel(e.target.value)); on('obSelRadiusN', 'input', e=> setSel(e.target.value));
   $$('[data-selradius]', bar).forEach(c=> c.addEventListener('click', ()=> setSel(1e6)));
   $$('[data-radius]', bar).forEach(c=> c.addEventListener('click', ()=> setR(c.dataset.radius)));
@@ -3171,7 +3213,8 @@ function bindOptions(bar){
   on('obPoints', 'input', e=>{ SHAPE_OPT.points = clamp(+e.target.value || 5, 3, 24); });
   on('obInner', 'input', e=>{ SHAPE_OPT.inner = clamp(+e.target.value, 10, 90) / 100; });
   on('obLineW', 'input', e=>{ SHAPE_OPT.lineW = +e.target.value; });
-  on('obOutW', 'input', e=>{ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } });
+  { const cp = $('#obCorners', bar); if(cp) MS.bindCornerPicker(cp, ()=> SHAPE_OPT.corners, c=>{ SHAPE_OPT.corners = c; }); }
+  { const cp = $('#obSelCorners', bar); if(cp) MS.bindCornerPicker(cp, ()=>{ const a = cv().getActiveObject(); return MS.cornersGet(a); }, c=>{ const a = cv().getActiveObject(); if(!a) return; MS.cornersSet(a, c); MS.dirtyObj(a); cv().requestRenderAll(); clearTimeout(setSel._t2); setSel._t2 = setTimeout(()=> MS.commit('Corner choice'), 350); }); }
   on('obStyle', 'click', e=>{ const b = e.target.closest('button'); if(!b) return; SHAPE_OPT.style = b.dataset.v; MS.store.set('shapeStyle', b.dataset.v); T.renderOptions(); });
   on('obMoreShapes', 'click', e=>{ const r = e.currentTarget.getBoundingClientRect(); shapeLibrary(r.left, r.bottom + 4); });
   on('obBrushColor', 'input', e=>{ brush.color = e.target.value; if(cv().freeDrawingBrush) cv().freeDrawingBrush.color = e.target.value; });
@@ -3804,7 +3847,7 @@ function syncProps(){
   setVal('propBlend', obj.globalCompositeOperation || 'source-over');
   const img = obj.type === 'image', txt = isText(obj) && !multi;
   $('#propFillGroup').style.display = img ? 'none' : ''; $('#propTextGroup').style.display = txt ? '' : 'none'; $('#propImageGroup').style.display = img ? '' : 'none';
-  $('#rowCorner').style.display = (MS.roundable(obj) || (txt && !obj._isCurvedText)) ? '' : 'none';
+  $('#rowCorner').style.display = $('#rowCorners').style.display = MS.roundableSel(obj) ? '' : 'none';
   if(!img){
     let src = obj; if(kids(obj).length){ const k = kids(obj).find(o=> o.fill !== undefined && o.type !== 'image'); if(k) src = k; }
     const fd = describeColor(src.fill), sd = describeColor(src.stroke);
@@ -3813,7 +3856,7 @@ function syncProps(){
     chipPreview('#propFillPreview', fd); chipPreview('#propStrokePreview', sd);
     const dash = src.strokeDashArray; $$('#strokeStyleSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (!dash ? 'solid' : (dash[0] <= 2 ? 'dot' : 'dash'))));
     $$('#strokeJoinSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (src.strokeLineJoin || 'miter')));
-    if(MS.roundable(obj) || txt){ const rv = obj.type === 'rect' ? (obj.rx || 0) : txt ? MS.fx.getRound(obj) : (obj.__round || 0); setVal('propRadius', rv); setVal('propRadiusNum', Math.round(rv)); MS.fillRange($('#propRadius')); }
+    if(MS.roundableSel(obj)){ const ro = multi ? obj.getObjects().find(MS.roundable) : obj, rv = MS.roundGet(ro); setVal('propRadius', rv); setVal('propRadiusNum', Math.round(rv)); MS.fillRange($('#propRadius')); $('#propCorners').innerHTML = MS.cornerPickerHtml(MS.cornersGet(ro)); }
     reflectFill && reflectFill(src);
     // effects (shadow / glow / outline are drawn by the stack controls; distress is below)
     const fx = obj.__fx || {};
@@ -3904,11 +3947,13 @@ function wireProps(){
   { const sw = $('#propStrokeWidth'), swr = $('#propStrokeWidthR');
     swr.addEventListener('input', ()=>{ if(syncing) return; sw.value = swr.value; sw.dispatchEvent(new Event('input', { bubbles:true })); });
     sw.addEventListener('input', ()=>{ if(+sw.value > +swr.max) swr.max = sw.value; swr.value = sw.value; MS.fillRange(swr); }); }
-  num('propStrokeWidth', v=>{ S.strokeW = v; eachObj(function put(o){ if(o.type === 'image') return; if(o._objects && o.type !== 'activeSelection') o._objects.forEach(put); o.set({ strokeWidth:v, strokeUniform:true }); if(v && !o.stroke) o.set('stroke', S.stroke || '#000'); o.dirty = true; }); done('Stroke width'); });
+  num('propStrokeWidth', v=>{ S.strokeW = v; eachObj(function put(o){ if(o.type === 'image') return; if(o._objects && o.type !== 'activeSelection') o._objects.forEach(put); o.set({ strokeWidth:v, strokeUniform:true }); if(v && !o.stroke) o.set('stroke', S.stroke || '#000'); if(v > 0 && !o.fill && o.__kind) MS.shapeOpt.outlineW = v; o.dirty = true; }); done('Stroke width'); });
   $('#strokeStyleSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=>{ const w = Math.max(1, o.strokeWidth || 2); o.set('strokeDashArray', b.dataset.v === 'solid' ? null : b.dataset.v === 'dash' ? [w*3, w*2] : [1, w*2]); if(b.dataset.v === 'dot') o.set('strokeLineCap', 'round'); }); done('Stroke style', true); });
   $('#strokeJoinSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=> o.set('strokeLineJoin', b.dataset.v)); done('Line join', true); });
-  const setRadius = v=>{ eachObj(o=>{ if(o.type === 'rect') o.set({ rx:v, ry:v }); else if(MS.roundable(o)){ o.__round = v; o.dirty = true; } else if(isText(o) && !o._isCurvedText) MS.fx.setRound(o, v); }); setVal('propRadius', v); setVal('propRadiusNum', v); MS.fillRange($('#propRadius')); done('Corner radius'); };
+  const setRadius = v=>{ eachObj(o=>{ if(MS.roundable(o)) MS.roundSet(o, v); }); setVal('propRadius', v); setVal('propRadiusNum', v); MS.fillRange($('#propRadius')); done('Corner radius'); };
   num('propRadius', setRadius); num('propRadiusNum', setRadius);
+  // which corners the radius reaches: any combination of the four
+  MS.bindCornerPicker($('#propCorners'), ()=>{ const a = cv().getActiveObject(), ro = a && (a.type === 'activeSelection' ? a.getObjects().find(MS.roundable) : a); return MS.cornersGet(ro); }, c=>{ eachObj(o=>{ if(MS.roundable(o)) MS.cornersSet(o, c); }); done('Corner choice'); });
   $('#btnMoreFills').addEventListener('click', ()=>{ MS.fillForSelection = true; MS.showPage('fill'); });
   // text
   $('#propTextContent').addEventListener('input', e=> TX.text(e.target.value));
@@ -5551,20 +5596,20 @@ function withProps(o, props, fn){
   list.forEach(([x])=>{ Object.assign(x, props); x.objectCaching = false; x.dirty = true; });
   try{ fn(); } finally { list.forEach(([x, old])=>{ Object.assign(x, old); x.dirty = true; }); }
 }
-function underlay(o, ctx){
+function underlay(o, ctx, mode){
   const st = fxStack(o); if(!st || !o.canvas) return;
   const sh = st.shadow && st.shadow.on ? st.shadow : null, gl = st.glow && st.glow.on ? st.glow : null, ol = st.outline && st.outline.on && o.type !== 'image' ? st.outline : null;
   ctx.save(); o.transform(ctx); o._setOpacity(ctx); o.__fxPass = true;
   try{
     const plain = ()=> o.drawObject(ctx, false);
     const sil = ol ? ()=> withProps(o, { fill:fillOf(o, ol.color), stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain) : plain;
-    if(sh){ const a = sh.angle * Math.PI / 180; shadowOnly(o, ctx, rgba(sh.color, clamp(sh.alpha, 0, 100) / 100), sh.blur, Math.cos(a) * sh.depth, Math.sin(a) * sh.depth, sil); }
-    if(gl){
+    if(sh && mode !== 'solid'){ const a = sh.angle * Math.PI / 180; shadowOnly(o, ctx, rgba(sh.color, clamp(sh.alpha, 0, 100) / 100), sh.blur, Math.cos(a) * sh.depth, Math.sin(a) * sh.depth, sil); }
+    if(gl && mode !== 'solid'){
       const b = Math.max(0, gl.bright) / 100, reps = 1 + Math.floor(b);
       // tight + medium + wide halos stacked: the bright part always hugs the element, however large the glow
       [[.12, .95], [.35, .8], [1, .7]].forEach(([f, w])=>{ for(let i = 0; i < reps; i++) shadowOnly(o, ctx, rgba(gl.color, clamp(b * w, 0, 1)), Math.max(1, gl.size * f), 0, 0, sil); });
     }
-    if(ol) withProps(o, { fill:fillOf(o, ol.color), stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
+    if(ol && mode !== 'soft') withProps(o, { fill:fillOf(o, ol.color), stroke:ol.color, strokeWidth:ol.width * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   } finally { o.__fxPass = false; ctx.restore(); }
 }
 // draws fn() with the element moved by (dx, dy) canvas px and its opacity scaled by alpha
@@ -5572,24 +5617,24 @@ function atOffset(o, ctx, dx, dy, alpha, fn){
   ctx.save(); ctx.translate(dx, dy); o.transform(ctx); o._setOpacity(ctx); ctx.globalAlpha *= alpha;
   try{ fn(); } finally { ctx.restore(); }
 }
-function underlayExtra(o, ctx){
+function underlayExtra(o, ctx, mode){
   const st = fxStack(o); if(!st) return;
   const on = k=> st[k] && st[k].on ? st[k] : null, plain = ()=> o.drawObject(ctx, false), img = o.type === 'image';
   const solid = (col, sw)=> ()=> withProps(o, { fill:fillOf(o, col), stroke:col, strokeWidth:(sw || 0) * 2, strokeUniform:true, strokeLineJoin:'round', strokeDashArray:null, paintFirst:'fill' }, plain);
   const dir = ang=> [Math.cos(ang * Math.PI / 180), Math.sin(ang * Math.PI / 180)];
   o.__fxPass = true;
   try{
-    let e;
-    if((e = on('longshadow')) && !img){ const n = Math.min(80, Math.max(1, Math.ceil(e.length))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
+    let e; const solidFx = mode !== 'soft', softFx = mode !== 'solid';
+    if(softFx && (e = on('longshadow')) && !img){ const n = Math.min(80, Math.max(1, Math.ceil(e.length))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
       for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.length * i / n, cy * e.length * i / n, 1 - f * i / n, solid(e.color)); }
-    if((e = on('extrude')) && !img){ const n = Math.min(60, Math.max(1, Math.ceil(e.depth))), [cx, cy] = dir(e.angle);
+    if(solidFx && (e = on('extrude')) && !img){ const n = Math.min(60, Math.max(1, Math.ceil(e.depth))), [cx, cy] = dir(e.angle);
       for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.depth * i / n, cy * e.depth * i / n, 1, solid(e.color)); }
-    if((e = on('echo'))){ const n = Math.min(30, Math.max(1, Math.round(e.copies))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
+    if(softFx && (e = on('echo'))){ const n = Math.min(30, Math.max(1, Math.round(e.copies))), [cx, cy] = dir(e.angle), f = clamp(e.fade, 0, 100) / 100;
       for(let i = n; i >= 1; i--) atOffset(o, ctx, cx * e.dist * i, cy * e.dist * i, .7 * Math.pow(1 - i / (n + 1), 1 + f * 2), plain); }
-    if((e = on('split')) && !img){ const [cx, cy] = dir(e.angle), al = clamp(e.alpha, 0, 100) / 100;
+    if(softFx && (e = on('split')) && !img){ const [cx, cy] = dir(e.angle), al = clamp(e.alpha, 0, 100) / 100;
       atOffset(o, ctx, -cx * e.offset, -cy * e.offset, al, solid(e.color)); atOffset(o, ctx, cx * e.offset, cy * e.offset, al, solid(e.color2)); }
-    if((e = on('ring2')) && !img){ atOffset(o, ctx, 0, 0, 1, solid(e.color, e.gap + e.width)); atOffset(o, ctx, 0, 0, 1, solid(e.color2, e.gap)); }
-    if((e = on('neon')) && !img){
+    if(solidFx && (e = on('ring2')) && !img){ atOffset(o, ctx, 0, 0, 1, solid(e.color, e.gap + e.width)); atOffset(o, ctx, 0, 0, 1, solid(e.color2, e.gap)); }
+    if(softFx && (e = on('neon')) && !img){
       ctx.save(); o.transform(ctx); o._setOpacity(ctx);
       try{ [[.1, 1], [.3, .9], [.65, .75], [1, .55]].forEach(([f, w])=> shadowOnly(o, ctx, rgba(e.color, w), Math.max(1, e.size * f), 0, 0, solid(e.color, e.width))); solid(e.color, e.width)(); } finally { ctx.restore(); }
     }
@@ -5609,24 +5654,44 @@ function underlayExtra(o, ctx){
 // fillOnly = set by the Fill > None box: the element still draws (its outline) but its empty fill area cuts through
 const cutOf = o=> { const s = o && o.__fx && o.__fx.stack, c = s && s.cutout && s.cutout.on ? s.cutout : null; return c && c.fillOnly && !o._objects && o.fill ? null : c; };
 const hidden = o=> { const c = cutOf(o); return !!c && !c.fillOnly; };
-let scratch = null, scratch2 = null;
+let scratch = null, scratch2 = null, scratch3 = null;
 const roundOf = o=> { const s = o && o.__fx && o.__fx.stack; return s && s.round && s.round.on && s.round.width > 0 ? s.round.width : 0; };
+// how far (doc px) the rounded, hard-edged effects reach past the element
+function fxReach(o){
+  const st = fxStack(o), on = k=> st && st[k] && st[k].on ? st[k] : null; let m = 0, e;
+  if(e = on('outline')) m = Math.max(m, e.width); if(e = on('extrude')) m = Math.max(m, e.depth);
+  if(e = on('ring2')) m = Math.max(m, e.gap + e.width);
+  return m;
+}
+/* Round corners on text, paths and groups: the element AND its hard-edged effects (outline, 3D extrude, double outline)
+   are painted together, softened, then cut back to a hard edge, so the outline, 3D extrude and double outline follow the rounded corners. Effects that fade or glow (shadow, glow, neon, long shadow, echo, RGB split) keep their own look.
+   o.__corners limits it to chosen corners: the element's own four quadrants (turned with the element) decide which parts take the rounded version. */
 function roundedRender(o, ctx, r, baseRender){
   const cv0 = ctx.canvas, W = cv0.width, H = cv0.height, tf = ctx.getTransform(), k = Math.max(.01, Math.hypot(tf.a, tf.b)), sigma = Math.max(.4, r * k * .6);
-  const bb = o.getBoundingRect(false, true), s = cv0.width / (o.canvas ? o.canvas.getWidth() : cv0.width), pad = Math.ceil(sigma * 3) + 6;
+  const bb = o.getBoundingRect(false, true), s = cv0.width / (o.canvas ? o.canvas.getWidth() : cv0.width), pad = Math.ceil(sigma * 3) + 6 + Math.ceil(fxReach(o) * k);
   const x0 = Math.max(0, Math.floor(bb.left * s - pad)), y0 = Math.max(0, Math.floor(bb.top * s - pad)), x1 = Math.min(W, Math.ceil((bb.left + bb.width) * s + pad)), y1 = Math.min(H, Math.ceil((bb.top + bb.height) * s + pad));
   const w = x1 - x0, h = y1 - y0; if(w < 2 || h < 2) return baseRender.call(o, ctx);
   if(!scratch) scratch = document.createElement('canvas'); if(!scratch2) scratch2 = document.createElement('canvas');
   if(scratch.width !== w || scratch.height !== h){ scratch.width = w; scratch.height = h; } if(scratch2.width !== w || scratch2.height !== h){ scratch2.width = w; scratch2.height = h; }
   const a = scratch.getContext('2d'), b = scratch2.getContext('2d');
   a.setTransform(1, 0, 0, 1, 0, 0); a.clearRect(0, 0, w, h); a.setTransform(tf.a, tf.b, tf.c, tf.d, tf.e - x0, tf.f - y0);
-  underlayExtra(o, ctx); underlay(o, ctx);                               // shadows / glows etc. are drawn as normal, un-rounded
+  underlayExtra(o, ctx, 'soft'); underlay(o, ctx, 'soft');               // shadow / glow / neon are drawn as normal, un-rounded
+  underlayExtra(o, a, 'solid'); underlay(o, a, 'solid');                 // the hard-edged ones go into the rounded layer with the element
   o.__fxPass = true; try{ baseRender.call(o, a); } finally { o.__fxPass = false; }
   b.setTransform(1, 0, 0, 1, 0, 0); b.clearRect(0, 0, w, h); b.filter = 'blur(' + sigma.toFixed(2) + 'px)'; b.drawImage(scratch, 0, 0); b.filter = 'none';
   const img = b.getImageData(0, 0, w, h), d = img.data;
   for(let i = 3; i < d.length; i += 4){ const al = d[i]; d[i] = al < 118 ? 0 : al > 138 ? 255 : (al - 118) * 12.75; }   // hard edge again, now with round corners
   b.putImageData(img, 0, 0);
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch2, x0, y0); ctx.restore();
+  let out = scratch2; const c4 = o.__corners;
+  if(c4 && !(c4[0] && c4[1] && c4[2] && c4[3])){
+    if(!scratch3) scratch3 = document.createElement('canvas'); if(scratch3.width !== w || scratch3.height !== h){ scratch3.width = w; scratch3.height = h; }
+    const e = scratch3.getContext('2d'); e.setTransform(1, 0, 0, 1, 0, 0); e.clearRect(0, 0, w, h); e.drawImage(scratch, 0, 0);   // un-rounded everywhere, then the chosen quadrants swapped for the rounded version
+    const M = o.calcTransformMatrix(), hw = o.width / 2, hh = o.height / 2, P = (lx, ly)=>{ const dx = M[0] * lx + M[2] * ly + M[4], dy = M[1] * lx + M[3] * ly + M[5]; return { x:tf.a * dx + tf.c * dy + tf.e - x0, y:tf.b * dx + tf.d * dy + tf.f - y0 }; };
+    const quads = [[[-hw, -hh], [0, -hh], [0, 0], [-hw, 0]], [[0, -hh], [hw, -hh], [hw, 0], [0, 0]], [[0, 0], [hw, 0], [hw, hh], [0, hh]], [[-hw, 0], [0, 0], [0, hh], [-hw, hh]]];
+    quads.forEach((q, i)=>{ if(!c4[i]) return; e.save(); e.beginPath(); q.forEach(([lx, ly], j)=>{ const p = P(lx, ly); if(j) e.lineTo(p.x, p.y); else e.moveTo(p.x, p.y); }); e.closePath(); e.clip(); e.clearRect(0, 0, w, h); e.drawImage(scratch2, 0, 0); e.restore(); });
+    out = scratch3;
+  }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(out, x0, y0); ctx.restore();
 }
 function cuttersFor(o){
   const list = o.canvas && o.canvas._objects; if(!list || o.group) return null;

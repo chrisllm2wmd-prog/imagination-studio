@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <link rel="stylesheet" href="css/studio.css">
-<script src="app.js?v=4.20-beta" defer></script>
+<script src="app.js?v=4.21-beta" defer></script>
 </head>
 <body data-ws="logo">
 
@@ -176,7 +176,8 @@
                   <div class="r"><label>Style</label>
                     <div class="seg grow" id="strokeStyleSeg"><button data-v="solid" class="active">Solid</button><button data-v="dash">Dashed</button><button data-v="dot">Dotted</button></div>
                   </div>
-                  <div class="r" id="rowCorner"><label>Corners</label><input type="range" id="propRadius" min="0" max="1000" value="0"><div class="f" style="width:62px"><input type="number" id="propRadiusNum" min="0" value="0"><em>px</em></div></div>
+                  <div class="r" id="rowCorner"><label>Radius</label><input type="range" id="propRadius" min="0" max="1000" value="0"><div class="f" style="width:62px"><input type="number" id="propRadiusNum" min="0" value="0"><em>px</em></div></div>
+                  <div class="r" id="rowCorners"><label>Corners</label><span id="propCorners"></span><span class="hint" style="margin-left:8px">pick any of the 4</span></div>
                   <div class="r"><label>Line join</label>
                     <div class="seg grow" id="strokeJoinSeg"><button data-v="miter" class="active">Sharp</button><button data-v="round">Round</button><button data-v="bevel">Bevel</button></div>
                   </div>
