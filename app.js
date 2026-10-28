@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.19 beta';
+window.IMAGINATION_VERSION = '4.20 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -1504,7 +1504,7 @@ const WORKING_PPI = 100;                // design px per inch (fixed working res
 const MAX_HISTORY = 80;
 const MAX_HISTORY_BYTES = 160 * 1024 * 1024;
 const SERIALIZE_PROPS = ['name','selectable','evented','hasControls','lockMovementX','lockMovementY','lockScalingX','lockScalingY','lockRotation',
-  '__animId','_isCurvedText','_curveSourceText','_curveStyle','_curveAmount','_curveFade','_warp','_layout','__isBackground','__fillMeta','__fx','__lockedLayer','__linkId','__bgMode','__kind','__outlined','paintFirst','strokeUniform','globalCompositeOperation'];
+  '__animId','_isCurvedText','_curveSourceText','_curveStyle','_curveAmount','_curveFade','_warp','_layout','__isBackground','__fillMeta','__fx','__lockedLayer','__linkId','__bgMode','__kind','__round','__outlined','paintFirst','strokeUniform','globalCompositeOperation'];
 MS.WORKING_PPI = WORKING_PPI;
 MS.SERIALIZE_PROPS = SERIALIZE_PROPS;
 
@@ -2055,7 +2055,7 @@ function showHud(obj, extra){
   const cx = b.left + b.width / 2, cy = b.top + b.height / 2, atX = Math.abs(cx - d.wPx / 2) < E, atY = Math.abs(cy - d.hPx / 2) < E;
   if(atX && atY) flags.push('✛ centred'); else if(atX) flags.push('↔ centred'); else if(atY) flags.push('↕ centred');
   const base = extra || (Math.round(b.width) + ' × ' + Math.round(b.height) + '   (' + Math.round(b.left) + ', ' + Math.round(b.top) + ')');
-  if(b.width > 2 && Math.abs(b.width - b.height) < E && !/circle|square/.test(base)) flags.push(obj.type === 'ellipse' || obj.type === 'circle' ? '● circle' : '■ square');
+  if(b.width > 2 && Math.abs(b.width - b.height) < E && !/circle|square/.test(base)) flags.push(obj.type === 'ellipse' || obj.type === 'circle' || obj.__kind === 'ring' || obj.__kind === 'ellipse' ? '● circle' : '■ square');
   const am = /(?:Rotate |∠)(-?\d+(?:\.\d+)?)/.exec(base);
   if(am){ const a = ((+am[1] % 360) + 360) % 360; if([0, 90, 180, 270].some(x=> Math.abs(a - x) < .05) && !/exact/.test(base)) flags.push('✓ ' + (a === 0 && +am[1] !== 0 ? 360 : a) + '°'); }
   const tail = /circle|square/.test(base) ? 1 : 0;
@@ -2494,6 +2494,34 @@ function arrowPoints(len, thick, headL, headW){
   const t = thick / 2, hw = headW / 2, bodyEnd = len - headL;
   return [{x:0,y:-t},{x:bodyEnd,y:-t},{x:bodyEnd,y:-hw},{x:len,y:0},{x:bodyEnd,y:hw},{x:bodyEnd,y:t},{x:0,y:t}];
 }
+/* rounded corners for any polygon-based shape (stars, diamonds, hexagons ... and the triangle): o.__round = radius in the shape's own units */
+function traceRounded(ctx, pts, r){
+  const n = pts.length; ctx.beginPath();
+  for(let i = 0; i < n; i++){
+    const p0 = pts[(i + n - 1) % n], p1 = pts[i], p2 = pts[(i + 1) % n], d1 = Math.hypot(p0.x - p1.x, p0.y - p1.y), d2 = Math.hypot(p2.x - p1.x, p2.y - p1.y), rr = Math.min(r, d1 / 2, d2 / 2);
+    const a = { x:p1.x + (p0.x - p1.x) * rr / (d1 || 1), y:p1.y + (p0.y - p1.y) * rr / (d1 || 1) }, b = { x:p1.x + (p2.x - p1.x) * rr / (d2 || 1), y:p1.y + (p2.y - p1.y) * rr / (d2 || 1) };
+    if(i === 0) ctx.moveTo(a.x, a.y); else ctx.lineTo(a.x, a.y);
+    ctx.quadraticCurveTo(p1.x, p1.y, b.x, b.y);
+  }
+}
+(function(){
+  const polyCommon = fabric.Polygon.prototype.commonRender;
+  fabric.Polygon.prototype.commonRender = function(ctx){
+    if(!(this.__round > 0) || !this.points || this.points.length < 3) return polyCommon.call(this, ctx);
+    const ox = this.pathOffset.x, oy = this.pathOffset.y; traceRounded(ctx, this.points.map(p=> ({ x:p.x - ox, y:p.y - oy })), this.__round); return true;
+  };
+  const triRender = fabric.Triangle.prototype._render;
+  fabric.Triangle.prototype._render = function(ctx){
+    if(!(this.__round > 0)) return triRender.call(this, ctx);
+    const w = this.width / 2, h = this.height / 2; traceRounded(ctx, [{ x:-w, y:h }, { x:0, y:-h }, { x:w, y:h }], this.__round); ctx.closePath(); this._renderPaintInOrder(ctx);
+  };
+})();
+MS.roundable = o=> !!o && (o.type === 'rect' || o.type === 'polygon' || o.type === 'triangle');
+// outline style applied after the fact to shapes that are not made by makeShape (the shape library, heart / speech / cross)
+function outlineStyle(o){
+  if(!o || SHAPE_OPT.style !== 'line') return o;
+  o.set({ fill:'', stroke: S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke, strokeWidth:Math.max(.5, SHAPE_OPT.outlineW), strokeUniform:true }); return o;
+}
 const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, outlineW:MS.store.get('outlineW', 6), style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
 
 // more drag-to-draw shapes: outlines as fractions of the drawn box (polygons) or as path data in a 100-unit box (curves)
@@ -2536,10 +2564,13 @@ function makeShape(kind, x0, y0, w, h, p0, p1){
     // Polygon's own origin is its bbox top-left; shift so that the arrow tail sits on p0
     o.set({ originX:'left', originY:'center' });
   }
+  if(o) o.__kind = kind;
   return o;
 }
 function describe(kind){ return { rect:'Rectangle', rrect:'Rounded rectangle', ellipse:'Ellipse', triangle:'Triangle', polygon:'Polygon', star:'Star', line:'Line', arrow:'Arrow', diamond:'Diamond', rtriangle:'Right triangle', pentagon:'Pentagon', hexagon:'Hexagon', octagon:'Octagon', parallelogram:'Parallelogram', trapezoid:'Trapezoid', chevron:'Chevron', plus:'Plus', blockarrow:'Block arrow', darrow:'Double arrow', bolt:'Lightning bolt', heart:'Heart', cloud:'Cloud', moon:'Moon', ring:'Ring', semicircle:'Semicircle', speech:'Speech bubble', star4:'4-point star' }[kind] || kind; }
 
+// shapes that have a perfect round / square form: they snap to equal width and height and the read-out goes green
+const EQUAL_SIDES = new Set(['rect', 'rrect', 'ellipse', 'triangle', 'rtriangle', 'polygon', 'star', 'star4', 'diamond', 'pentagon', 'hexagon', 'octagon', 'plus', 'heart', 'ring', 'moon', 'cloud', 'bolt', 'chevron', 'speech']);
 function shapeTool(kind, icon, key, label){
   let start = null, temp = null, lastP = null;
   return {
@@ -2560,11 +2591,11 @@ function shapeTool(kind, icon, key, label){
         replace(makeShape(kind, 0, 0, 0, 0, start, q)); MS.showHud(temp, Math.round(Math.hypot(q.x - start.x, q.y - start.y)) + ' px  ∠' + Math.round(Math.atan2(q.y - start.y, q.x - start.x) * 180 / Math.PI) + '°');
       } else {
         // Shift forces a perfect square/circle; without it, drawing within ~10 screen px of equal sides snaps to one
-        const sq = kind === 'rect' || kind === 'rrect' || kind === 'ellipse';
+        const sq = EQUAL_SIDES.has(kind), roundish = kind === 'ellipse' || kind === 'ring';
         const perfect = e.shiftKey || (sq && Math.max(w, h) > 0 && Math.abs(w - h) * S.view.z <= 10);
         if(perfect){ const m = Math.max(w, h); w = h = m; x0 = p.x < start.x ? start.x - m : start.x; y0 = p.y < start.y ? start.y - m : start.y; }
         if(e.altKey){ x0 = start.x - w; y0 = start.y - h; w *= 2; h *= 2; if(perfect){ w = h = Math.max(w, h); x0 = start.x - w/2; y0 = start.y - h/2; } }
-        replace(makeShape(kind, x0, y0, w, h)); MS.showHud(temp, Math.round(w) + ' × ' + Math.round(h) + (perfect && sq ? (kind === 'ellipse' ? '  ● circle' : '  ■ square') : ''));
+        replace(makeShape(kind, x0, y0, w, h)); MS.showHud(temp, Math.round(w) + ' × ' + Math.round(h) + (perfect && sq ? (roundish ? '  ● circle' : '  ■ square') : ''));
       }
       cv().requestRenderAll(); MS.liveSym && MS.liveSym.ghost(temp);
     },
@@ -2836,6 +2867,8 @@ T.addShape = function(kind, o){
   }
   Object.assign(S, { fill:saved.fill, stroke:saved.stroke, noFill:saved.noFill, noStroke:saved.noStroke });
   if(!obj){ MS.shapeLib(kind); return cv().getActiveObject(); }
+  if(['heart', 'speech', 'cross'].includes(kind)) outlineStyle(obj);
+  obj.__kind = kind;
   obj.name = MS.nextName(kind === 'rrect' ? 'rect' : (['heart','speech','cross'].includes(kind) ? 'polygon' : kind));
   const c = cv(); c.add(obj); c.discardActiveObject(); c.setActiveObject(obj); c.requestRenderAll(); commitLive(obj, 'Add ' + describe(kind).toLowerCase());
   return obj;
@@ -3003,7 +3036,7 @@ function styleHover(b){
   const open = ()=>{
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
     const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
-    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><input type="range" id="ssW" min="0.5" max="100" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:84px"></div>`;
+    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><input type="range" id="ssW" min="0.5" max="300" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:150px"></div>`;
     if(b.dataset.group){   // the shapes button: every drag-to-draw shape right here too
       const items = order.filter(id=> defs[id].group === b.dataset.group);
       pop.insertAdjacentHTML('beforeend', '<div class="ss-h hint">Shapes</div><div class="ss-grid">' + items.map(id=> `<button data-tool="${id}" class="${S.tool === id ? 'active' : ''}" title="${MS.esc(defs[id].label)}">${MS.icon(defs[id].icon)}</button>`).join('') + '</div>');
@@ -3064,7 +3097,7 @@ T.renderOptions = function(){
   const radiusHtml = ()=> `<div class="og radius-og"><label>Corner radius${kind === 'rect' ? ' (0 = sharp)' : ''}</label><input type="range" id="obRadius" min="0" max="${rmax}" value="${Math.min(rmax, SHAPE_OPT[radKey])}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obRadiusN" min="0" step="1" value="${SHAPE_OPT[radKey]}"><em>px</em></div>
       <span class="chips">${[0, 8, 24, 48, 100, 200, 500, 1000].filter(r=> r <= rmax).map(r=> `<span class="chip" data-radius="${r}">${r}</span>`).join('') + '<span class="chip" data-radius="100000" data-tip="Fully rounded ends / circle">Full</span>'}</span></div>`;
   if(shapeLike){
-    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><input type="range" id="obOutW" min="0.5" max="100" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:110px"></div>`;
+    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><input type="range" id="obOutW" min="0.5" max="300" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:190px"></div>`;
     if(kind === 'rect' || kind === 'rrect') h += radiusHtml();
     h += fillStroke();
     if(kind === 'polygon') h += `<div class="og"><label>Sides</label><div class="f" style="width:64px"><input type="number" id="obSides" min="3" max="24" value="${SHAPE_OPT.sides}" style="padding-left:8px"></div></div>`;
@@ -3186,6 +3219,7 @@ MS.shapeLib = function(k){
   else if(k === 'drop') o = new fabric.Path('M 0 -50 C 20 -20 40 0 40 22 A 40 40 0 0 1 -40 22 C -40 0 -20 -20 0 -50 Z', { ...common, scaleX:size/100, scaleY:size/100 });
   else if(k === 'gear'){ const pts = []; const teeth = 10; for(let i = 0; i < teeth*4; i++){ const a = -Math.PI/2 + i * 2*Math.PI / (teeth*4), r = (i % 4 < 2) ? .5 : .38; pts.push({ x:Math.cos(a)*r*size, y:Math.sin(a)*r*size }); } o = new fabric.Polygon(pts, common); }
   else { T.addShape(k); return; }
+  outlineStyle(o); o.__kind = k;
   o.name = MS.nextName('polygon');
   const c = cv(); c.add(o); c.discardActiveObject(); c.setActiveObject(o); c.requestRenderAll(); MS.commit('Add shape');
 };
@@ -3770,16 +3804,16 @@ function syncProps(){
   setVal('propBlend', obj.globalCompositeOperation || 'source-over');
   const img = obj.type === 'image', txt = isText(obj) && !multi;
   $('#propFillGroup').style.display = img ? 'none' : ''; $('#propTextGroup').style.display = txt ? '' : 'none'; $('#propImageGroup').style.display = img ? '' : 'none';
-  $('#rowCorner').style.display = (obj.type === 'rect') ? '' : 'none';
+  $('#rowCorner').style.display = (MS.roundable(obj) || (txt && !obj._isCurvedText)) ? '' : 'none';
   if(!img){
     let src = obj; if(kids(obj).length){ const k = kids(obj).find(o=> o.fill !== undefined && o.type !== 'image'); if(k) src = k; }
     const fd = describeColor(src.fill), sd = describeColor(src.stroke);
     $('#propFillNone').checked = !src.fill; setVal('propFill', fd.hex || '#222222');
-    $('#propStrokeNone').checked = !src.stroke; setVal('propStroke', sd.hex || '#000000'); setVal('propStrokeWidth', src.strokeWidth || 0); { const r = setVal('propStrokeWidthR', src.strokeWidth || 0); if(r){ r.max = Math.max(100, src.strokeWidth || 0); MS.fillRange(r); } }
+    $('#propStrokeNone').checked = !src.stroke; setVal('propStroke', sd.hex || '#000000'); setVal('propStrokeWidth', src.strokeWidth || 0); { const r = setVal('propStrokeWidthR', src.strokeWidth || 0); if(r){ r.max = Math.max(300, src.strokeWidth || 0); MS.fillRange(r); } }
     chipPreview('#propFillPreview', fd); chipPreview('#propStrokePreview', sd);
     const dash = src.strokeDashArray; $$('#strokeStyleSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (!dash ? 'solid' : (dash[0] <= 2 ? 'dot' : 'dash'))));
     $$('#strokeJoinSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (src.strokeLineJoin || 'miter')));
-    if(obj.type === 'rect'){ setVal('propRadius', obj.rx || 0); setVal('propRadiusNum', Math.round(obj.rx || 0)); MS.fillRange($('#propRadius')); }
+    if(MS.roundable(obj) || txt){ const rv = obj.type === 'rect' ? (obj.rx || 0) : txt ? MS.fx.getRound(obj) : (obj.__round || 0); setVal('propRadius', rv); setVal('propRadiusNum', Math.round(rv)); MS.fillRange($('#propRadius')); }
     reflectFill && reflectFill(src);
     // effects (shadow / glow / outline are drawn by the stack controls; distress is below)
     const fx = obj.__fx || {};
@@ -3870,10 +3904,10 @@ function wireProps(){
   { const sw = $('#propStrokeWidth'), swr = $('#propStrokeWidthR');
     swr.addEventListener('input', ()=>{ if(syncing) return; sw.value = swr.value; sw.dispatchEvent(new Event('input', { bubbles:true })); });
     sw.addEventListener('input', ()=>{ if(+sw.value > +swr.max) swr.max = sw.value; swr.value = sw.value; MS.fillRange(swr); }); }
-  num('propStrokeWidth', v=>{ S.strokeW = v; eachObj(o=>{ o.set({ strokeWidth:v, strokeUniform:true }); if(v && !o.stroke) o.set('stroke', S.stroke || '#000'); }); done('Stroke width'); });
+  num('propStrokeWidth', v=>{ S.strokeW = v; eachObj(function put(o){ if(o.type === 'image') return; if(o._objects && o.type !== 'activeSelection') o._objects.forEach(put); o.set({ strokeWidth:v, strokeUniform:true }); if(v && !o.stroke) o.set('stroke', S.stroke || '#000'); o.dirty = true; }); done('Stroke width'); });
   $('#strokeStyleSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=>{ const w = Math.max(1, o.strokeWidth || 2); o.set('strokeDashArray', b.dataset.v === 'solid' ? null : b.dataset.v === 'dash' ? [w*3, w*2] : [1, w*2]); if(b.dataset.v === 'dot') o.set('strokeLineCap', 'round'); }); done('Stroke style', true); });
   $('#strokeJoinSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=> o.set('strokeLineJoin', b.dataset.v)); done('Line join', true); });
-  const setRadius = v=>{ eachObj(o=>{ if(o.type === 'rect') o.set({ rx:v, ry:v }); }); setVal('propRadius', v); setVal('propRadiusNum', v); MS.fillRange($('#propRadius')); done('Corner radius'); };
+  const setRadius = v=>{ eachObj(o=>{ if(o.type === 'rect') o.set({ rx:v, ry:v }); else if(MS.roundable(o)){ o.__round = v; o.dirty = true; } else if(isText(o) && !o._isCurvedText) MS.fx.setRound(o, v); }); setVal('propRadius', v); setVal('propRadiusNum', v); MS.fillRange($('#propRadius')); done('Corner radius'); };
   num('propRadius', setRadius); num('propRadiusNum', setRadius);
   $('#btnMoreFills').addEventListener('click', ()=>{ MS.fillForSelection = true; MS.showPage('fill'); });
   // text
@@ -5463,10 +5497,12 @@ Object.assign(FXDEF, {
     ctl:[['color', 'Colour A'], ['color2', 'Colour B'], ['offset', 'Offset', 0, b=> Math.max(300, b * .6), 1, 'px'], ['angle', 'Angle', 0, 360, 1, '°'], ['alpha', 'Opacity', 0, 100, 1, '%']] },
   ring2:{ label:'Double outline', icon:'stroke', def:b=>({ on:true, color:'#ffffff', color2:'#000000', gap:Math.max(2, Math.round(b * .012)), width:Math.max(3, Math.round(b * .02)) }),
     ctl:[['color', 'Outer colour'], ['color2', 'Inner colour'], ['gap', 'Inner width', 1, b=> Math.max(120, b * .3), 1, 'px'], ['width', 'Outer width', 1, b=> Math.max(200, b * .45), 1, 'px']] },
+  round:{ label:'Round corners', icon:'rrect', def:b=>({ on:true, width:Math.max(2, Math.round(b * .02)) }),
+    ctl:[['width', 'Radius', 0, b=> Math.max(400, b * .5), 0.5, 'px']] },
   cutout:{ label:'Pass through', icon:'eraser', def:()=>({ on:true, layers:1, strength:100 }),
     ctl:[['layers', 'Layers cut (0 = all)', 0, 20, 1, ''], ['strength', 'Strength', 0, 100, 1, '%']] },
 });
-const KINDS = ['shadow', 'glow', 'outline', 'extrude', 'longshadow', 'echo', 'neon', 'split', 'ring2', 'cutout'];
+const KINDS = ['shadow', 'glow', 'outline', 'extrude', 'longshadow', 'echo', 'neon', 'split', 'ring2', 'cutout', 'round'];
 // one-click looks: each switches every other effect off and sets the listed ones (b = the element's size)
 const LOOKS = {
   'Sticker':{ outline:b=>({ color:'#ffffff', width:Math.round(b * .035) }), shadow:b=>({ color:'#000000', alpha:55, blur:Math.round(b * .03), depth:Math.round(b * .02), angle:60 }) },
@@ -5573,7 +5609,25 @@ function underlayExtra(o, ctx){
 // fillOnly = set by the Fill > None box: the element still draws (its outline) but its empty fill area cuts through
 const cutOf = o=> { const s = o && o.__fx && o.__fx.stack, c = s && s.cutout && s.cutout.on ? s.cutout : null; return c && c.fillOnly && !o._objects && o.fill ? null : c; };
 const hidden = o=> { const c = cutOf(o); return !!c && !c.fillOnly; };
-let scratch = null;
+let scratch = null, scratch2 = null;
+const roundOf = o=> { const s = o && o.__fx && o.__fx.stack; return s && s.round && s.round.on && s.round.width > 0 ? s.round.width : 0; };
+function roundedRender(o, ctx, r, baseRender){
+  const cv0 = ctx.canvas, W = cv0.width, H = cv0.height, tf = ctx.getTransform(), k = Math.max(.01, Math.hypot(tf.a, tf.b)), sigma = Math.max(.4, r * k * .6);
+  const bb = o.getBoundingRect(false, true), s = cv0.width / (o.canvas ? o.canvas.getWidth() : cv0.width), pad = Math.ceil(sigma * 3) + 6;
+  const x0 = Math.max(0, Math.floor(bb.left * s - pad)), y0 = Math.max(0, Math.floor(bb.top * s - pad)), x1 = Math.min(W, Math.ceil((bb.left + bb.width) * s + pad)), y1 = Math.min(H, Math.ceil((bb.top + bb.height) * s + pad));
+  const w = x1 - x0, h = y1 - y0; if(w < 2 || h < 2) return baseRender.call(o, ctx);
+  if(!scratch) scratch = document.createElement('canvas'); if(!scratch2) scratch2 = document.createElement('canvas');
+  if(scratch.width !== w || scratch.height !== h){ scratch.width = w; scratch.height = h; } if(scratch2.width !== w || scratch2.height !== h){ scratch2.width = w; scratch2.height = h; }
+  const a = scratch.getContext('2d'), b = scratch2.getContext('2d');
+  a.setTransform(1, 0, 0, 1, 0, 0); a.clearRect(0, 0, w, h); a.setTransform(tf.a, tf.b, tf.c, tf.d, tf.e - x0, tf.f - y0);
+  underlayExtra(o, ctx); underlay(o, ctx);                               // shadows / glows etc. are drawn as normal, un-rounded
+  o.__fxPass = true; try{ baseRender.call(o, a); } finally { o.__fxPass = false; }
+  b.setTransform(1, 0, 0, 1, 0, 0); b.clearRect(0, 0, w, h); b.filter = 'blur(' + sigma.toFixed(2) + 'px)'; b.drawImage(scratch, 0, 0); b.filter = 'none';
+  const img = b.getImageData(0, 0, w, h), d = img.data;
+  for(let i = 3; i < d.length; i += 4){ const al = d[i]; d[i] = al < 118 ? 0 : al > 138 ? 255 : (al - 118) * 12.75; }   // hard edge again, now with round corners
+  b.putImageData(img, 0, 0);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(scratch2, x0, y0); ctx.restore();
+}
 function cuttersFor(o){
   const list = o.canvas && o.canvas._objects; if(!list || o.group) return null;
   const i = list.indexOf(o); if(i < 0) return null; let out = null;
@@ -5596,7 +5650,7 @@ function cuttersFor(o){
   fabric.Object.prototype.render = function(ctx){
     if(hidden(this)) return;
     const cuts = !this.__cutPass && this.canvas ? cuttersFor(this) : null;
-    if(!cuts) return baseRender.call(this, ctx);
+    if(!cuts){ const rr = !this.__cutPass && roundOf(this); return rr ? roundedRender(this, ctx, rr, baseRender) : baseRender.call(this, ctx); }
     const W = ctx.canvas.width, H = ctx.canvas.height;
     if(!scratch) scratch = document.createElement('canvas');
     if(scratch.width !== W || scratch.height !== H){ scratch.width = W; scratch.height = H; }
@@ -5722,7 +5776,10 @@ function wire(){
 }
 
 // Fill > None: the empty fill becomes a cut-out through the layer beneath (adjust in the Pass through effect)
-MS.fx.isCutter = hidden;   // an invisible Pass-through element (never catches clicks on the canvas)
+MS.fx.isCutter = hidden;
+// text 'Corners' slider in the Design panel: rounds the letters' corners by growing them with a round-join edge in their own colour
+MS.fx.getRound = o=>{ const s = stackOf(o); return s && s.round && s.round.on ? s.round.width : 0; };
+MS.fx.setRound = (o, v)=>{ migrate(o); const st = ensureStack(o); st.round = Object.assign({}, st.round, { on:v > 0, width:v }); o.dirty = true; };   // an invisible Pass-through element (never catches clicks on the canvas)
 MS.fx.setFillCut = function(o, on){
   migrate(o); const st = ensureStack(o), cur = st.cutout;
   if(on){ if(!cur || !cur.on) st.cutout = { on:true, layers:1, strength:100, fillOnly:true }; }

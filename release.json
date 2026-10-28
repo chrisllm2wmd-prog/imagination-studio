@@ -1,9 +1,10 @@
 {
-  "version": "4.19 beta",
+  "version": "4.20 beta",
   "date": "2026-10-28",
   "notes": [
-    "Hover the shapes button (left toolbar) to see every shape at once, with Solid / Outline and the outline width.",
-    "All collapsible groups in the right-hand panels now start closed.",
-    "Outline width slider added to the Design panel, linked to the width box."
+    "Every shape that can be a perfect circle or square now snaps to it and the read-out turns green.",
+    "Corners slider in the Design panel now rounds all shapes (stars, diamonds, hexagons, triangles and more) and text.",
+    "Outline width now works on every shape, with three times the range and a wider slider.",
+    "Fixed the toolbar tooltip covering the Solid / Outline choices."
   ]
 }
