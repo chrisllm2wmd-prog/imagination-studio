@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.24 beta';
+window.IMAGINATION_VERSION = '4.25 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -1448,6 +1448,192 @@ document.addEventListener('DOMContentLoaded', () => {
       items[n].focus();
       items[n].click();
       items[n].scrollIntoView({ block: 'nearest' });
+    },
+    true
+  );
+})();
+
+;
+/* js/colorpick.js */
+/* Imagination Studio - colour picker: every <input type="color"> opens this instead of the browser's own box.
+   Square + hue bar + hex box, the 5 last used colours, and OK / Cancel. Live while you pick; Cancel puts the colour back.
+   Like the Filled / Outline box it is STICKY: a click anywhere else is refused and the box flashes green and shakes (Esc cancels). */
+(function () {
+  'use strict';
+  const MS = window.MS;
+
+  // site standard: a box that must be answered flashes green + shakes when the user clicks away without answering
+  MS.nudgeBox = el => {
+    el.classList.remove('nudge-green');
+    void el.offsetWidth;
+    el.classList.add('nudge-green');
+  };
+
+  const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const rgb2hex = (r, g, b) =>
+    '#' +
+    [r, g, b]
+      .map(v =>
+        Math.round(MS.clamp(v, 0, 255))
+          .toString(16)
+          .padStart(2, '0')
+      )
+      .join('');
+  function rgb2hsv(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    const mx = Math.max(r, g, b),
+      d = mx - Math.min(r, g, b);
+    let h = 0;
+    if (d) h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, mx ? d / mx : 0, mx];
+  }
+  function hsv2rgb(h, s, v) {
+    const f = n => {
+      const k = (n + h / 60) % 6;
+      return (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255;
+    };
+    return [f(5), f(3), f(1)];
+  }
+
+  let open = null;
+  MS.pickColor = function (input) {
+    if (open) open.close(false);
+    const start = /^#[0-9a-f]{6}$/i.test(input.value) ? input.value.toLowerCase() : '#000000';
+    let [h, s, v] = rgb2hsv(...hex2rgb(start));
+    const box = document.createElement('div');
+    box.className = 'cpick';
+    const recent = (MS.recentColors || []).slice(0, 5);
+    box.innerHTML =
+      '<div class="cpk-sv"><i class="cpk-dot"></i></div><div class="cpk-hue"><i class="cpk-hd"></i></div>' +
+      '<div class="cpk-row"><span class="cpk-old" title="Current"></span><span class="cpk-new" title="New"></span>' +
+      '<input class="cpk-hex" type="text" maxlength="7" spellcheck="false"></div>' +
+      '<div class="cpk-h">Last used</div><div class="cpk-rec">' +
+      (recent.length
+        ? recent.map(c => `<button class="cpk-sw" data-c="${c}" title="${c}" style="background:${c}"></button>`).join('')
+        : '<span class="hint">None yet</span>') +
+      '</div><div class="cpk-btns"><button class="btn" data-a="cancel">Cancel</button><button class="btn primary" data-a="ok">OK</button></div>';
+    document.body.appendChild(box);
+    const sv = box.querySelector('.cpk-sv'),
+      hue = box.querySelector('.cpk-hue'),
+      dot = box.querySelector('.cpk-dot'),
+      hd = box.querySelector('.cpk-hd'),
+      hx = box.querySelector('.cpk-hex'),
+      nw = box.querySelector('.cpk-new');
+    box.querySelector('.cpk-old').style.background = start;
+    // live: the colour is applied to the page as you pick; Cancel puts the original back
+    const live = () => {
+      input.value = cur();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const cur = () => rgb2hex(...hsv2rgb(h, s, v));
+    const paint = skipHex => {
+      sv.style.background = `linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,hsl(${h},100%,50%))`;
+      dot.style.left = s * 100 + '%';
+      dot.style.top = (1 - v) * 100 + '%';
+      hd.style.left = (h / 360) * 100 + '%';
+      nw.style.background = cur();
+      if (!skipHex) hx.value = cur();
+    };
+    const drag = (el, fn) =>
+      el.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        const mv = ev => {
+          const r = el.getBoundingClientRect();
+          fn(MS.clamp((ev.clientX - r.left) / r.width, 0, 1), MS.clamp((ev.clientY - r.top) / r.height, 0, 1));
+          paint();
+          live();
+        };
+        mv(e);
+        el.addEventListener('pointermove', mv);
+        el.addEventListener('pointerup', () => el.removeEventListener('pointermove', mv), { once: true });
+      });
+    drag(sv, (x, y) => {
+      s = x;
+      v = 1 - y;
+    });
+    drag(hue, x => {
+      h = x * 359.999;
+    });
+    const setHex = c => {
+      if (!/^#[0-9a-f]{6}$/i.test(c)) return false;
+      [h, s, v] = rgb2hsv(...hex2rgb(c));
+      return true;
+    };
+    hx.addEventListener('input', () => {
+      let t = hx.value.trim();
+      if (t && t[0] !== '#') t = '#' + t;
+      if (setHex(t)) {
+        paint(true);
+        live();
+      }
+    });
+    hx.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        close(true);
+      }
+    });
+    box.querySelector('.cpk-rec').addEventListener('click', e => {
+      const b = e.target.closest('.cpk-sw');
+      if (b && setHex(b.dataset.c)) {
+        paint();
+        live();
+      }
+    });
+    const close = ok => {
+      document.removeEventListener('mousedown', away, true);
+      window.removeEventListener('keydown', key, true);
+      box.remove();
+      open = null;
+      if (ok) {
+        const c = cur();
+        input.value = c;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        MS.noteColor && MS.noteColor(c);
+      } else if (input.value !== start) {
+        input.value = start; // Cancel: back to exactly where it was
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    };
+    const away = e => {
+      if (box.contains(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      MS.nudgeBox(box);
+    };
+    const key = e => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        close(false);
+      }
+    };
+    box.querySelector('.cpk-btns').addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (b) close(b.dataset.a === 'ok');
+    });
+    document.addEventListener('mousedown', away, true);
+    window.addEventListener('keydown', key, true);
+    const r = input.getBoundingClientRect();
+    box.style.left = MS.clamp(r.left, 6, innerWidth - box.offsetWidth - 6) + 'px';
+    box.style.top = MS.clamp(r.bottom + 6, 6, innerHeight - box.offsetHeight - 6) + 'px';
+    paint();
+    open = { close };
+  };
+
+  // every colour box in the app, present and future (including ones clicked from code)
+  document.addEventListener(
+    'click',
+    e => {
+      const t = e.target;
+      if (!t || !t.matches || !t.matches('input[type=color]') || t.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      MS.pickColor(t);
     },
     true
   );
@@ -6571,9 +6757,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       e.preventDefault();
       e.stopPropagation();
-      pop.classList.remove('nudge');
-      void pop.offsetWidth;
-      pop.classList.add('nudge');
+      MS.nudgeBox(pop);
     };
     const esc = e => {
       if (e.key === 'Escape' && pop && pop.dataset.pick) {
@@ -9932,8 +10116,13 @@ document.addEventListener('DOMContentLoaded', () => {
     t.forEach(o => {
       const f = make(o);
       o.__fillMeta = meta || null;
+      // an outline-only shape (no fill, a line) takes a texture / pattern / gradient on its LINE, never in its empty centre
+      const hollow = !o.fill && !o._objects && o.stroke && o.strokeWidth > 0;
       if (o.type === 'line') o.set('stroke', f);
-      else o.set('fill', f);
+      else if (hollow && f && typeof f !== 'string') {
+        if (f.source) f.repeat = 'repeat'; // the line's outer half lies outside the shape's box: let the texture wrap instead of ending there
+        o.set('stroke', f);
+      } else o.set('fill', f);
       o.dirty = true;
     });
     roots.forEach(g => {
@@ -10023,6 +10212,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const grid = $('#bgPatternGrid'),
       pc = $('#bgPatCount');
     if (pc) pc.textContent = MS.patterns.list.length;
+    // None: take the texture / pattern off the selected shapes (back to a plain colour A), or off the background
+    const none = document.createElement('button');
+    none.title = 'None (no texture)';
+    none.dataset.kind = 'none';
+    none.innerHTML =
+      '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M6.3 17.7L17.7 6.3"/></svg>';
+    none.addEventListener('click', () => {
+      if (!targetIsSelection()) {
+        MS.clearBackground();
+        return;
+      }
+      const col = $('#bgPatClearA').checked ? '' : $('#bgPatColorA').value,
+        t = selTargets(),
+        isTex = f => f && typeof f !== 'string';
+      let n = 0;
+      t.forEach(o => {
+        if (isTex(o.fill)) o.set('fill', col);
+        else if (isTex(o.stroke)) o.set('stroke', col || '#000000');
+        else return;
+        o.__fillMeta = null;
+        o.dirty = true;
+        n++;
+      });
+      if (!n) {
+        toast('No texture on the selection.');
+        return;
+      }
+      MS.dirtyObj(cv().getActiveObject());
+      cv().requestRenderAll();
+      MS.commit('Remove texture');
+    });
+    grid.appendChild(none);
     MS.patterns.list.forEach(p => {
       const b = document.createElement('button');
       b.title = p.label;
@@ -10615,7 +10836,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'click',
       e => {
         const b = e.target.closest('button');
-        if (!b) return;
+        if (!b || b.dataset.kind === 'none') return;
         BG.pat = b.dataset.kind;
         if ($('#bgTarget').value !== 'sel') {
           e.stopImmediatePropagation();
@@ -26384,12 +26605,16 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
     }
   };
   function updateReady(w) {
+    if (document.getElementById('splash')) return; // the title screen already shows the Update found card: no second Update now
     bar('A new version of Imagination Studio is ready.', [
       [
         'Update now',
         () => {
-          updating = true;
-          w.postMessage('skipWaiting');
+          const go = () => {
+            updating = true;
+            w.postMessage('skipWaiting');
+          };
+          MS.confirmUpdate ? MS.confirmUpdate(go) : go();
         },
       ],
       ['Later', hide],
@@ -27523,6 +27748,28 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       .then(j => (j && j.art ? 'title/' + j.art : null))
       .catch(() => null);
   }
+  // every Update now asks first: updating reloads the app, so say plainly whether the open project has unsaved work
+  MS.confirmUpdate = function (go) {
+    const risk = !!(S.dirty && S.ready && cv() && cv().getObjects().length),
+      name = MS.esc(S.doc.name || 'Untitled design');
+    const m = MS.modal({
+      title: risk ? 'Unsaved work will be at risk' : 'Before you update',
+      med: true,
+      sticky: true,
+      body:
+        '<p>Updating reloads Imagination Studio. <b>Save any project you have open first.</b></p>' +
+        (risk
+          ? `<p class="warn">⚠ “${name}” has <b>unsaved changes</b>. A recovery copy is kept automatically and offered when the app reopens, but it only holds your latest project, so save it to a file now to be safe.</p>`
+          : '<p class="hint">Nothing is at risk right now: the open project has no unsaved changes.</p>'),
+      buttons: [
+        { label: 'Cancel' },
+        { spacer: true },
+        ...(risk ? [{ label: 'Save project…', action: () => MS.saveProject() }] : []),
+        { label: risk ? 'Update anyway' : 'Update', primary: !risk, danger: risk, action: () => go() },
+      ],
+    });
+    m.overlay.style.zIndex = 100001; // above the title screen
+  };
   // title screen: where the Start button is, say 'Checking for updates', then show what the new build brings
   async function runUpdateCheck(ov) {
     const box = ov.querySelector('#spUpd');
@@ -27548,9 +27795,11 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       <div class="upd-btns"><button class="btn primary" id="spUpdNow">Update now</button><span class="upd-cur">You are on build ${esc(window.IMAGINATION_VERSION || '')}</span></div></div>`;
       box.querySelector('#spUpdNow').onclick = e => {
         const b = e.currentTarget;
-        b.disabled = true;
-        b.textContent = 'Updating…';
-        MS.applyUpdate();
+        MS.confirmUpdate(() => {
+          b.disabled = true;
+          b.textContent = 'Updating…';
+          MS.applyUpdate();
+        });
       };
     } else if (res.state === 'current') {
       box.innerHTML = '<div class="upd-ok">✓ You have the latest version · build ' + esc(window.IMAGINATION_VERSION || '') + '</div>';

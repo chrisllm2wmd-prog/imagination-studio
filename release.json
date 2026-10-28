@@ -1,12 +1,11 @@
 {
-  "version": "4.24 beta",
+  "version": "4.25 beta",
   "date": "2026-10-28",
   "notes": [
-    "Claude can now add design effects (neon, 3D extrude, glow…) and one-click Looks to your design.",
-    "Saving and the saved-files browser keep working while Claude is thinking.",
-    "Updates are safer offline: an update only installs once every file has downloaded.",
-    "Drawing tools now remind you to press V to select things again.",
-    "Fixed the folder name shown when saving to your assets library.",
-    "Behind the scenes: tidier code and automatic checks before every release."
+    "Every colour picker now remembers your last 5 colours and shows the colour live as you pick, with OK to keep it and Cancel to put it back.",
+    "Textures on outline shapes now fill the line itself, not the empty centre.",
+    "New None tile in the texture list takes a texture off again.",
+    "Update now asks you to save open projects first, and tells you if unsaved work is at risk.",
+    "The title screen logo is bigger, stays the same size when an update appears (it just slides up), and shows a single Update now button."
   ]
 }

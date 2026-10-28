@@ -355,7 +355,7 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 #splash{position:fixed;inset:0;z-index:5000;background:radial-gradient(circle at 50% 35%,#1d2030,#0b0c10 70%);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:opacity .4s;}
 #splash.out{opacity:0;pointer-events:none;}
 #splash .sp-art{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;}
-#splash .sp-default{text-align:center;} #splash .sp-mark .ic{width:84px;height:84px;color:var(--acc);} #splash h1{font-size:46px;margin:14px 0 6px;letter-spacing:1px;font-weight:700;} #splash p{color:var(--mut);font-size:15px;margin:0;}
+#splash .sp-default{text-align:center;} #splash .sp-mark .ic{width:min(130px,14vh);height:min(130px,14vh);color:var(--acc);} #splash h1{font-size:min(68px,7.6vh);margin:1.6vh 0 .8vh;letter-spacing:1px;font-weight:700;} #splash p{color:var(--mut);font-size:min(21px,2.5vh);margin:0;}
 #splash .sp-go{position:absolute;bottom:13vh;height:42px;padding:0 34px;font-size:15px;border-radius:22px;box-shadow:0 8px 30px rgba(0,0,0,.5);}
 #splash .sp-hint{position:absolute;bottom:4.6vh;color:rgba(255,255,255,.55);font-size:12px;text-shadow:0 1px 4px #000;}
 
@@ -595,7 +595,7 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 
 
 /* live symmetry button + settings, shape style hover menu */
-.shape-style.nudge{animation:ssNudge .45s ease;}
+.nudge-green{animation:ssNudge .45s ease;}
 @keyframes ssNudge{0%{transform:none;box-shadow:0 0 0 3px #3ddc84,0 0 24px #3ddc84;border-color:#3ddc84}15%{transform:translateX(-8px)}35%{transform:translateX(8px)}55%{transform:translateX(-6px);box-shadow:0 0 0 3px #3ddc84,0 0 24px #3ddc84;border-color:#3ddc84}75%{transform:translateX(5px)}100%{transform:none}}
 .shape-style button{min-width:150px;} .shape-style .ic{flex:none;}
 #toolbox .tool.sym-on{background:var(--accbg);border-color:var(--accln);color:var(--acc2);box-shadow:inset 0 0 0 1px var(--accln);}
@@ -605,8 +605,8 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .sb-sym{margin-left:8px;padding:0 8px;border-radius:9px;background:var(--accbg);border:1px solid var(--accln);color:var(--acc2);font-size:11px;cursor:pointer;white-space:nowrap;}
 
 /* title screen: logo + name sit higher so the update check / update notes have room where the Start button is */
-#splash{align-items:flex-start;} #splash .sp-default{margin-top:9vh;transition:margin .3s;} #splash .sp-art{align-self:stretch;}
-#splash.sp-has-upd .sp-default{margin-top:3vh;} #splash.sp-has-upd .sp-mark .ic{width:54px;height:54px;} #splash.sp-has-upd h1{font-size:32px;margin:6px 0 2px;} #splash.sp-has-upd .sp-default p{display:none;}
+#splash{align-items:flex-start;} #splash .sp-default{margin-top:11vh;transition:margin-top .8s cubic-bezier(.4,0,.2,1);} #splash .sp-art{align-self:stretch;}
+#splash.sp-has-upd .sp-default{margin-top:2vh;} /* same size with or without the update card: the logo just slides up to make room */
 #splash.sp-checking .sp-go,#splash.sp-checking .sp-install,#splash.sp-checking .sp-hint{display:none !important;}
 @keyframes spSwing{0%{transform:rotate(-135deg)}50%{transform:rotate(135deg)}100%{transform:rotate(-135deg)}}
 #splash .upd-check{display:flex;align-items:center;gap:12px;height:42px;font-size:15px;color:#dfe6ff;text-shadow:0 1px 6px #000;} #splash .upd-ring{width:22px;height:22px;animation:spSwing 1.3s ease-in-out infinite;}
@@ -653,3 +653,12 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 /* size tiles never start fully invisible, so the row is never an empty gap */
 @keyframes homeInFmt{from{opacity:.45;transform:translateY(5px);}to{opacity:1;transform:none;}}
 @media (prefers-reduced-motion:reduce){ .home-fmts.pop .home-cat{animation:none;} }
+
+/* colour picker (colorpick.js) */
+.cpick{position:fixed;z-index:100000;width:220px;background:var(--bg2);border:1px solid var(--line2);border-radius:10px;padding:10px;box-shadow:0 10px 36px #000a;display:flex;flex-direction:column;gap:8px;font-size:12px;}
+.cpick .cpk-sv{position:relative;height:130px;border-radius:6px;cursor:crosshair;touch-action:none;} .cpick .cpk-hue{position:relative;height:14px;border-radius:7px;cursor:pointer;touch-action:none;background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);}
+.cpick .cpk-dot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #000a;pointer-events:none;} .cpick .cpk-hd{position:absolute;top:-2px;width:6px;height:18px;margin-left:-3px;border-radius:3px;border:2px solid #fff;box-shadow:0 0 0 1px #000a;pointer-events:none;}
+.cpick .cpk-row{display:flex;gap:6px;align-items:center;} .cpick .cpk-old,.cpick .cpk-new{width:26px;height:26px;border-radius:5px;border:1px solid var(--line2);flex:none;} .cpick .cpk-hex{flex:1;min-width:0;font-family:monospace;}
+.cpick .cpk-h{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mut);} .cpick .cpk-rec{display:flex;gap:6px;min-height:24px;align-items:center;} .cpick .cpk-sw{width:26px;height:26px;border-radius:5px;border:1px solid var(--line2);padding:0;cursor:pointer;}
+.cpick .cpk-btns{display:flex;gap:8px;justify-content:flex-end;}
+.modal p.warn{color:var(--warn);}
