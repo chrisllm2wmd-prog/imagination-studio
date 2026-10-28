@@ -1,5 +1,5 @@
 {
-  "version": "4.23 beta",
+  "version": "4.23.2 beta",
   "date": "2026-10-28",
   "notes": [
     "Merch workspace: a big live mockup now sits beside the canvas while you design. Drag its edge to resize, or hide it.",
@@ -7,6 +7,8 @@
     "Ad Studio walks you through Theme, Campaign, Voice and Style as numbered steps with Next buttons.",
     "The right-hand tabs stay on one row, and Layers takes less room by default.",
     "File > Fonts used in this design lists every font, ready to copy for print hand-offs.",
-    "Library shapes now match drawn shapes exactly."
+    "Library shapes now match drawn shapes exactly.",
+    "A shape you pick stays armed after each draw (V returns to Move), and Rounded rectangle is gone from the shape menu - use Radius in Design.",
+    "Picking a shape low in the list no longer closes the Filled / Outline choice - it now opens right under the pointer."
   ]
 }

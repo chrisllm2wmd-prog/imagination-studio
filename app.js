@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.23 beta';
+window.IMAGINATION_VERSION = '4.23.2 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -2496,12 +2496,12 @@ function pointOf(o){ return cv().getPointer(o.e); }
 function snapP(p){ return MS.snapPoint(p); }
 // when live symmetry is on, the new element's copies are made first so it is one undo step
 function commitLive(obj, label){ const lv = MS.liveSym && MS.liveSym.on && MS.liveSym.add(obj); if(lv) lv.then(()=> MS.commit(label)); else MS.commit(label); }
-function finishCreate(obj, label){
+function finishCreate(obj, label, keepTool){
   const c = cv();
   c.discardActiveObject();
   c.setActiveObject(obj);
   commitLive(obj, label);
-  if(!MS.prefs.stickyTools) T.set('move');
+  if(!MS.prefs.stickyTools && !keepTool) T.set('move');
   else { c.requestRenderAll(); }
 }
 
@@ -2680,7 +2680,7 @@ function shapeTool(kind, icon, key, label){
       }
       temp.setCoords(); MS.hideHud();
       const o = temp; temp = null; MS.liveSym && MS.liveSym.ghost(null);
-      finishCreate(o, 'Draw ' + describe(kind).toLowerCase());
+      finishCreate(o, 'Draw ' + describe(kind).toLowerCase(), true);   // the shape the user picked stays armed (its icon is still showing); V / Move to leave
     },
     exit(){ if(temp){ cv().remove(temp); temp = null; } MS.liveSym && MS.liveSym.ghost(null); },
   };
@@ -2724,7 +2724,7 @@ reg({ id:'zoom', label:'Zoom', icon:'zoom', key:'Z', lock:true, cursor:'zoom-in'
  ['moon','moon','','Moon / crescent'],['ring','ring','','Ring / donut'],['semicircle','semicircle','','Semicircle'],['speech','speech','','Speech bubble'],['star4','star4','','4-point star']].forEach(([k, ic, key, label])=>{
   const d = shapeTool(k, ic, key, label);
   d.isShape = true;
-  d.hint = label + ': drag to draw · snaps to a perfect square/circle (Shift forces it) · 45° · Alt = from centre. Switches back to Move / Select when you let go.';
+  d.hint = label + ': drag to draw · snaps to a perfect square/circle (Shift forces it) · 45° · Alt = from centre. Stays on this shape until you pick another tool (V = Move).';
   reg(d);
 });
 
@@ -3095,19 +3095,21 @@ function styleHover(b){
   let timer = null, pop = null, leave = null;
   const kill = ()=>{ clearTimeout(timer); clearTimeout(leave); if(pop){ pop.remove(); pop = null; document.removeEventListener('mousedown', away, true); } };
   const away = e=>{ if(pop && !pop.contains(e.target) && !b.contains(e.target)) kill(); };
-  const askStyle = id=>{
+  const askStyle = (id, e)=>{
     const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
     pop.innerHTML = `<div class="ss-h hint">${MS.esc(defs[id].label.replace(/ \(.*/, ''))}: draw it as</div>` + row('solid', 'Filled', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>');
     pop.dataset.pick = id;
+    // the small Filled / Outline box opens under the pointer (the shape grid it replaces can be far taller), so the mouse never ends up outside it
+    if(e){ clearTimeout(leave); const h = pop.offsetHeight, w = pop.offsetWidth; pop.style.left = clamp(e.clientX - 24, 4, innerWidth - w - 4) + 'px'; pop.style.top = clamp(e.clientY - 24, 4, innerHeight - h - 4) + 'px'; }
   };
   const open = ()=>{
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
-    const items = order.filter(id=> defs[id].group === b.dataset.group);
+    const items = order.filter(id=> defs[id].group === b.dataset.group && id !== 'rrect');   // corner radius lives in the Design panel for every shape
     pop.innerHTML = '<div class="ss-h hint">Shapes</div><div class="ss-grid">' + items.map(id=> `<button data-tool="${id}" class="${S.tool === id ? 'active' : ''}" title="${MS.esc(defs[id].label)}">${MS.icon(defs[id].icon)}</button>`).join('') + '</div>';
     document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
     pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
     pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return;
-      if(x.dataset.tool){ if(x.dataset.tool === 'line' || x.dataset.tool === 'arrow'){ T.set(x.dataset.tool); kill(); } else askStyle(x.dataset.tool); return; }
+      if(x.dataset.tool){ if(x.dataset.tool === 'line' || x.dataset.tool === 'arrow'){ T.set(x.dataset.tool); kill(); } else askStyle(x.dataset.tool, e); return; }
       SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(pop.dataset.pick); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines (set the width in Design).' : 'Shapes are drawn filled.', 1800); });
     setTimeout(()=> document.addEventListener('mousedown', away, true), 0);
   };
@@ -3115,7 +3117,7 @@ function styleHover(b){
   b.addEventListener('mouseleave', ()=>{ clearTimeout(timer); leave = setTimeout(()=>{ if(pop && !pop.matches(':hover')) kill(); }, 350); });
 }
 function openFlyout(btn, group){
-  const items = order.filter(id=> defs[id].group === group);
+  const items = order.filter(id=> defs[id].group === group && id !== 'rrect');
   const r = btn.getBoundingClientRect();
   MS.closeMenus();
   const m = document.createElement('div'); m.className = 'flyout' + (items.length > 8 ? ' shapes-fly' : '');

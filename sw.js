@@ -1,8 +1,8 @@
 /* Imagination Studio service worker: offline use + safe updates.
    VERSION is stamped by make-download.ps1, so every new build gets its own cache and the browser sees a changed sw.js. */
-const VERSION = '4.23 beta';
+const VERSION = '4.23.2 beta';
 const CACHE = 'imagination-' + VERSION;
-const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png', 'app.js?v=4.23-beta'];
+const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'css/studio.css', 'fonts/fonts.css', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png', 'app.js?v=4.23.2-beta'];
 
 self.addEventListener('install', e=>{
   // fetch fresh copies (bypass the browser HTTP cache) and keep them; the new worker WAITS until the user accepts the update
