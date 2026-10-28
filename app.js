@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.18 beta';
+window.IMAGINATION_VERSION = '4.19 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -794,8 +794,9 @@ function wireAccordions(root){
       const s = h.parentElement; s.classList.toggle('collapsed');
       const k = s.dataset.sect; if(k) MS.store.set('sect.'+k, s.classList.contains('collapsed'));
     });
-    const s = h.parentElement, k = s.dataset.sect;
-    if(k && MS.store.get('sect.'+k, false)) s.classList.add('collapsed');
+    // every collapsible group starts closed (the ones with a chevron); open ones stay open while the app is running
+    const s = h.parentElement;
+    if(h.querySelector('.car, [data-i="chevd"]')) s.classList.add('collapsed');
   });
 }
 MS.wireAccordions = wireAccordions;
@@ -3003,10 +3004,15 @@ function styleHover(b){
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
     const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
     pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><input type="range" id="ssW" min="0.5" max="100" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:84px"></div>`;
+    if(b.dataset.group){   // the shapes button: every drag-to-draw shape right here too
+      const items = order.filter(id=> defs[id].group === b.dataset.group);
+      pop.insertAdjacentHTML('beforeend', '<div class="ss-h hint">Shapes</div><div class="ss-grid">' + items.map(id=> `<button data-tool="${id}" class="${S.tool === id ? 'active' : ''}" title="${MS.esc(defs[id].label)}">${MS.icon(defs[id].icon)}</button>`).join('') + '</div>');
+    }
     document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
     pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
     pop.addEventListener('input', e=>{ if(e.target.id === 'ssW'){ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } } });
-    pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return; SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(b.dataset.tool); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines.' : 'Shapes are drawn solid.', 1800); });
+    pop.addEventListener('click', e=>{ const x = e.target.closest('button'); if(!x) return;
+      if(x.dataset.tool){ T.set(x.dataset.tool); kill(); return; } SHAPE_OPT.style = x.dataset.v; MS.store.set('shapeStyle', SHAPE_OPT.style); T.set(b.dataset.tool); kill(); toast(SHAPE_OPT.style === 'line' ? 'Shapes are drawn as outlines.' : 'Shapes are drawn solid.', 1800); });
     setTimeout(()=> document.addEventListener('mousedown', away, true), 0);
   };
   b.addEventListener('mouseenter', ()=>{ clearTimeout(leave); if(S.tool === 'move' || true){ timer = setTimeout(open, 450); } });
@@ -3769,7 +3775,7 @@ function syncProps(){
     let src = obj; if(kids(obj).length){ const k = kids(obj).find(o=> o.fill !== undefined && o.type !== 'image'); if(k) src = k; }
     const fd = describeColor(src.fill), sd = describeColor(src.stroke);
     $('#propFillNone').checked = !src.fill; setVal('propFill', fd.hex || '#222222');
-    $('#propStrokeNone').checked = !src.stroke; setVal('propStroke', sd.hex || '#000000'); setVal('propStrokeWidth', src.strokeWidth || 0);
+    $('#propStrokeNone').checked = !src.stroke; setVal('propStroke', sd.hex || '#000000'); setVal('propStrokeWidth', src.strokeWidth || 0); { const r = setVal('propStrokeWidthR', src.strokeWidth || 0); if(r){ r.max = Math.max(100, src.strokeWidth || 0); MS.fillRange(r); } }
     chipPreview('#propFillPreview', fd); chipPreview('#propStrokePreview', sd);
     const dash = src.strokeDashArray; $$('#strokeStyleSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (!dash ? 'solid' : (dash[0] <= 2 ? 'dot' : 'dash'))));
     $$('#strokeJoinSeg button').forEach(bt=> bt.classList.toggle('active', bt.dataset.v === (src.strokeLineJoin || 'miter')));
@@ -3861,6 +3867,9 @@ function wireProps(){
   $('#propStroke').addEventListener('input', e=>{ S.stroke = e.target.value; S.noStroke = false; $('#propStrokeNone').checked = false; eachObj(o=>{ o.set({ stroke:e.target.value }); if(!o.strokeWidth) o.set('strokeWidth', S.strokeW || 2); }); MS.tools.syncSwatches(); done('Stroke colour'); });
   $('#propStroke').addEventListener('change', e=> MS.noteColor(e.target.value));
   $('#propStrokeNone').addEventListener('change', e=>{ S.noStroke = e.target.checked; eachObj(o=> o.set('stroke', e.target.checked ? null : (S.stroke || '#000000'))); done('Stroke', true); });
+  { const sw = $('#propStrokeWidth'), swr = $('#propStrokeWidthR');
+    swr.addEventListener('input', ()=>{ if(syncing) return; sw.value = swr.value; sw.dispatchEvent(new Event('input', { bubbles:true })); });
+    sw.addEventListener('input', ()=>{ if(+sw.value > +swr.max) swr.max = sw.value; swr.value = sw.value; MS.fillRange(swr); }); }
   num('propStrokeWidth', v=>{ S.strokeW = v; eachObj(o=>{ o.set({ strokeWidth:v, strokeUniform:true }); if(v && !o.stroke) o.set('stroke', S.stroke || '#000'); }); done('Stroke width'); });
   $('#strokeStyleSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=>{ const w = Math.max(1, o.strokeWidth || 2); o.set('strokeDashArray', b.dataset.v === 'solid' ? null : b.dataset.v === 'dash' ? [w*3, w*2] : [1, w*2]); if(b.dataset.v === 'dot') o.set('strokeLineCap', 'round'); }); done('Stroke style', true); });
   $('#strokeJoinSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; eachObj(o=> o.set('strokeLineJoin', b.dataset.v)); done('Line join', true); });

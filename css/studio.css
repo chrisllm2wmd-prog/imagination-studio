@@ -618,3 +618,6 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 /* the shapes flyout has many tools now: two columns */
 .flyout.shapes-fly{display:grid;grid-template-columns:repeat(2,1fr);min-width:340px;gap:1px;} .flyout.shapes-fly button{min-width:0;}
 .shape-style .ss-w{flex-wrap:wrap;}
+
+.shape-style .ss-h{padding:6px 10px 2px;} .shape-style .ss-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;padding:2px 2px 4px;max-width:260px;}
+.shape-style .ss-grid button{min-width:0;width:auto;justify-content:center;padding:6px 0;} .shape-style .ss-grid .ic{width:18px;height:18px;}

@@ -1,11 +1,9 @@
 {
-  "version": "4.18 beta",
+  "version": "4.19 beta",
   "date": "2026-10-28",
   "notes": [
-    "Bottom-left read-out turns green when you hit centre, a perfect square or circle, or exactly 0, 90, 180, 270 or 360 degrees.",
-    "19 new draw shapes: diamond, pentagon, hexagon, octagon, parallelogram, trapezoid, chevron, plus, block and double arrows, lightning bolt, heart, cloud, moon, ring, semicircle, speech bubble, 4-point star and right triangle.",
-    "Outline width is now a slider with fine control; solid shapes fill correctly again.",
-    "Delete button on every layer in the layer list.",
-    "Right-hand panel headings are blue when closed and green when open."
+    "Hover the shapes button (left toolbar) to see every shape at once, with Solid / Outline and the outline width.",
+    "All collapsible groups in the right-hand panels now start closed.",
+    "Outline width slider added to the Design panel, linked to the width box."
   ]
 }
