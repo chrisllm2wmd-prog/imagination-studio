@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.25 beta';
+window.IMAGINATION_VERSION = '4.25.1 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -3480,6 +3480,7 @@ document.addEventListener('DOMContentLoaded', () => {
     o = o || {};
     const d = S.doc;
     d.name = o.name || 'Untitled design';
+    d.projectId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     d.kind = o.kind || d.kind || 'logo';
     d.mode = o.mode || 'print';
     if (d.mode === 'print') {
@@ -4603,6 +4604,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const m = payload.meta || {};
     const d = S.doc;
     d.name = m.name || 'Untitled design';
+    d.projectId = m.projectId || 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     d.mode = m.designMode || m.mode || 'print';
     d.wPx = m.pxW || m.wPx || Math.round((m.wIn || 12) * WORKING_PPI);
     d.hPx = m.pxH || m.hPx || Math.round((m.hIn || 12) * WORKING_PPI);
@@ -20238,8 +20240,49 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function saveGroup(id) {
-    return saveObjects(members(id), (S.links[id] || { name: 'Group' }).name);
+  // the project a saved group belongs to; a design with no id yet (first launch) gets one on first use
+  function pid() {
+    return S.doc.projectId || (S.doc.projectId = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+  }
+  function saveGroup(id) {
+    askName(members(id), (S.links[id] || { name: 'Group' }).name, 'Save group');
+  }
+  // small naming box shown before anything is saved
+  function askName(ms, first, title) {
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<div class="r"><label>Name</label><input type="text" class="grow" id="asName" spellcheck="false"></div><div class="hint">Saved with this project (“' +
+      esc(S.doc.name || 'Untitled design') +
+      '”). Find it later in the Groups drop-down.</div>';
+    $('#asName', body).value = first;
+    const api = MS.modal({
+      title: title || 'Save group',
+      body,
+      med: true,
+      buttons: [
+        { spacer: true },
+        { label: 'Cancel' },
+        {
+          label: 'Save',
+          primary: true,
+          icon: 'save',
+          action: () => {
+            saveObjects(ms, $('#asName', body).value.trim() || first);
+          },
+        },
+      ],
+    });
+    setTimeout(() => {
+      const i = $('#asName', body);
+      i && (i.focus(), i.select());
+    }, 50);
+    $('#asName', body).addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const b = $$('.modal-f .btn.primary', api.el)[0];
+        b && b.click();
+      }
+    });
   }
   // save ANY set of objects (one thing, several things, a group) into the assets library (MERCH\groups + this browser)
   async function saveObjects(ms, name) {
@@ -20258,7 +20301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     objs.forEach(o => {
       delete o.__linkId;
     });
-    const rec = { id: 's' + Date.now().toString(36), name: info.name, thumb, objects: objs, x: x0, y: y0, w, h, t: Date.now() };
+    const rec = { id: 's' + Date.now().toString(36), name: info.name, projectId: pid(), projectName: S.doc.name || 'Untitled design', thumb, objects: objs, x: x0, y: y0, w, h, t: Date.now() };
     await dbPut(rec);
     const put = await MS.saveQuiet(
       new Blob([JSON.stringify({ type: 'merch-studio-group', v: 1, ...rec })], { type: 'application/json' }),
@@ -20321,13 +20364,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const local = await dbAll(),
       files = await folderGroups(),
       seen = new Set(files.map(r => r.id)),
-      recs = files.concat(local.filter(r => !seen.has(r.id)));
+      all = files.concat(local.filter(r => !seen.has(r.id)));
+    allRecs = all;
+    renderMenu();
+    // the panel only shows groups saved under the open project
+    const recs = all.filter(r => r.projectId === pid());
     const canFile = await MS.files.canStore();
     const mv = $('#grpToFolder');
     if (mv) mv.style.display = canFile && local.some(r => !seen.has(r.id)) ? '' : 'none';
     $('#grpLibCount').textContent = recs.length || '';
     if (!recs.length) {
-      box.innerHTML = '<div class="hint" style="padding:8px 10px">Nothing saved yet — click the <b>save</b> icon on a group above.</div>';
+      box.innerHTML = '<div class="hint" style="padding:8px 10px">Nothing saved in this project yet — click the <b>save</b> icon on a group above.</div>';
       return;
     }
     box.innerHTML = '';
@@ -20354,6 +20401,62 @@ document.addEventListener('DOMContentLoaded', () => {
       box.appendChild(row);
     });
   }
+  /* ---------------- Groups drop-down: every saved group, organised by project ---------------- */
+  let allRecs = [],
+    menu = null;
+  function renderMenu() {
+    if (!menu) return;
+    const cur = pid(),
+      byP = new Map();
+    allRecs.forEach(r => {
+      const k = r.projectId || '';
+      if (!byP.has(k)) byP.set(k, { name: k ? r.projectName || 'Untitled design' : 'Earlier saves', recs: [] });
+      byP.get(k).recs.push(r);
+    });
+    if (byP.has(cur)) byP.get(cur).name = S.doc.name || 'Untitled design';
+    if (!byP.size) {
+      menu.innerHTML = '<div class="hint" style="padding:10px">No saved groups yet.</div>';
+      return;
+    }
+    menu.innerHTML = '';
+    [...byP.entries()]
+      .sort((a, b) => (b[0] === cur) - (a[0] === cur))
+      .forEach(([k, p]) => {
+        const h = document.createElement('div');
+        h.className = 'gm-proj' + (k === cur ? ' cur' : '');
+        h.textContent = p.name + (k === cur ? ' (this project)' : '');
+        menu.appendChild(h);
+        p.recs.forEach(rec => {
+          const row = document.createElement('div');
+          row.className = 'grp-row';
+          row.innerHTML = `<div class="layer-thumb" style="width:28px;height:28px"><img src="${rec.thumb}" draggable="false"></div><div class="grp-main"><div class="lname">${esc(rec.name)}</div><div class="hint">${rec.objects.length} items</div></div>`;
+          row.onclick = () => {
+            closeMenu();
+            insertSaved(rec);
+          };
+          menu.appendChild(row);
+        });
+      });
+  }
+  function closeMenu() {
+    if (menu) menu.remove();
+    menu = null;
+    document.removeEventListener('mousedown', outside, true);
+  }
+  function outside(e) {
+    if (menu && !menu.contains(e.target) && !e.target.closest('#lpMenuBtn')) closeMenu();
+  }
+  function toggleMenu() {
+    if (menu) return closeMenu();
+    menu = document.createElement('div');
+    menu.className = 'gm-menu';
+    const r = $('#lpMenuBtn').getBoundingClientRect();
+    menu.style.left = Math.max(4, r.left) + 'px';
+    menu.style.top = r.bottom + 4 + 'px';
+    document.body.appendChild(menu);
+    renderMenu();
+    document.addEventListener('mousedown', outside, true);
+  }
   // copy every group that only lives in this browser into the groups folder
   async function groupsToFolder() {
     const files = await folderGroups(),
@@ -20379,44 +20482,14 @@ document.addEventListener('DOMContentLoaded', () => {
       toast('Select something on the canvas first, then save it to your assets.', 4000);
       return;
     }
-    const body = document.createElement('div');
-    body.innerHTML =
-      '<div class="r"><label>Name</label><input type="text" class="grow" id="asName" spellcheck="false"></div><div class="hint">Saved to your assets library (the Groups panel, and the MERCH\\groups folder). Insert it into any design later.</div>';
-    const first = ms.length === 1 ? ms[0].name || ms[0].type : ms.length + ' items';
-    $('#asName', body).value = first;
-    const api = MS.modal({
-      title: 'Save to assets',
-      body,
-      med: true,
-      buttons: [
-        { spacer: true },
-        { label: 'Cancel' },
-        {
-          label: 'Save',
-          primary: true,
-          icon: 'save',
-          action: () => {
-            saveObjects(ms, $('#asName', body).value.trim() || first);
-          },
-        },
-      ],
-    });
-    setTimeout(() => {
-      const i = $('#asName', body);
-      i && (i.focus(), i.select());
-    }, 50);
-    $('#asName', body).addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const b = $$('.modal-f .btn.primary', api.el)[0];
-        b && b.click();
-      }
-    });
+    askName(ms, ms.length === 1 ? ms[0].name || ms[0].type : ms.length + ' items', 'Save to assets');
   }
   MS.groups = {
     saveSelection,
     addRecord: async rec => {
       rec.id = 's' + Date.now().toString(36);
+      rec.projectId = pid();
+      rec.projectName = S.doc.name || 'Untitled design';
       await dbPut(rec);
       const put = await MS.saveQuiet(
         new Blob([JSON.stringify({ type: 'merch-studio-group', v: 1, ...rec })], { type: 'application/json' }),
@@ -20436,6 +20509,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const j = JSON.parse(ev.target.result);
         if (j.type !== 'merch-studio-group') throw new Error('Not a saved group file.');
         j.id = 's' + Date.now().toString(36);
+        j.projectId = pid();
+        j.projectName = S.doc.name || 'Untitled design';
         await dbPut(j);
         renderLibrary();
         toast('Group added to the library.');
@@ -20451,7 +20526,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tool = $('#toolbox');
     const p = document.createElement('aside');
     p.id = 'leftPanel';
-    p.innerHTML = `<div class="lp-h"><button class="ib" id="lpToggle" data-tip="Show / hide the Groups panel">${MS.icon('group')}</button><b>Groups</b><span class="layer-badge" id="grpCount"></span></div>
+    p.innerHTML = `<div class="lp-h"><button class="ib" id="lpToggle" data-tip="Show / hide the Groups panel">${MS.icon('group')}</button><b>Groups</b><span class="layer-badge" id="grpCount"></span><button class="btn sm" id="lpMenuBtn" data-tip="All saved groups, by project">Saved ▾</button></div>
     <div class="lp-body"><div class="lp-sec"><div id="grpList"></div></div>
     <div class="lp-sec"><div class="lp-title">${MS.icon('save')}<span>Assets &amp; saved groups</span><span class="layer-badge" id="grpLibCount"></span></div><div class="lp-actions"><button class="btn sm" id="grpSaveSel" data-tip="Save the selected item(s) to assets">${MS.icon('plus')}<span>Save selection</span></button><button class="btn sm" id="grpFolder" data-tip="Browse saved files / pick a folder">${MS.icon('folder')}<span>Browse</span></button><button class="btn sm" id="grpImport" data-tip="Add a group file">${MS.icon('import')}<span>Import</span></button></div><div class="r" style="padding:0 10px 6px"><button class="btn sm block" id="grpToFolder" style="display:none" data-tip="Copy groups kept only in this browser into the groups folder">Copy into folder</button></div><div id="grpLib"></div></div>
     <div class="hint" style="padding:8px 10px">Lock ON: the group moves, rotates and scales as one and keeps its layout. Lock OFF: edit items on their own. Hold <kbd>Alt</kbd> while clicking to pick one item inside a locked group.</div></div>
@@ -20463,6 +20538,7 @@ document.addEventListener('DOMContentLoaded', () => {
       MS.emit('resize');
     };
     if (MS.store.get('lpCollapsed', innerWidth < 1250)) p.classList.add('collapsed');
+    $('#lpMenuBtn').onclick = toggleMenu;
     $('#grpSaveSel').onclick = saveSelection;
     $('#grpFolder').onclick = () => MS.openFiles && MS.openFiles('groups');
     $('#grpToFolder').onclick = groupsToFolder;
@@ -20493,6 +20569,8 @@ document.addEventListener('DOMContentLoaded', () => {
     MS.on('doc', () => {
       S.links = S.links || {};
       scheduleRender();
+      closeMenu();
+      renderLibrary();
     });
     MS.addCommand && MS.addCommand({ title: 'Save selection to assets', cat: 'File', kw: 'asset library group save', run: saveSelection });
     render();

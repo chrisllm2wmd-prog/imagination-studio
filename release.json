@@ -1,7 +1,9 @@
 {
-  "version": "4.25 beta",
+  "version": "4.25.1 beta",
   "date": "2026-10-28",
   "notes": [
+    "Saved groups now belong to the project they were saved in. The Groups panel only lists the open project's groups, so a new project starts empty.",
+    "Saving a group asks for a name first, and a new Saved drop-down beside the panel button lists every saved group, organised by project.",
     "Every colour picker now remembers your last 5 colours and shows the colour live as you pick, with OK to keep it and Cancel to put it back.",
     "Textures on outline shapes now fill the line itself, not the empty centre.",
     "New None tile in the texture list takes a texture off again.",
