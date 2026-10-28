@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.17 beta';
+window.IMAGINATION_VERSION = '4.18 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -553,6 +553,25 @@ const P = {
   chevr:'M9 6l6 6-6 6',
   chevl:'M15 6l-6 6 6 6',
   chevu:'M6 15l6-6 6 6',
+  diamond:'M12 3l9 9-9 9-9-9z',
+  rtriangle:'M5 4v16h14z',
+  pentagon:'M12 3l9 7-3.5 11h-11L3 10z',
+  hexp:'M12 3l8 4.5v9L12 21l-8-4.5v-9z',
+  octagon:'M8 3h8l5 5v8l-5 5H8l-5-5V8z',
+  parallelogram:'M7 5h14l-4 14H3z',
+  trapezoid:'M8 5h8l6 14H2z',
+  chevron:'M4 4h9l7 8-7 8H4l7-8z',
+  plus:'M9 3h6v6h6v6h-6v6H9v-6H3V9h6z',
+  blockarrow:'M3 9h10V4l8 8-8 8v-5H3z',
+  darrow:'M2 12l5-6v4h10V6l5 6-5 6v-4H7v4z',
+  bolt:'M14 2L6 13h5l-2 9 9-12h-6z',
+  heart:'M12 20s-8-5-8-11a4.5 4.5 0 018-2.5A4.5 4.5 0 0120 9c0 6-8 11-8 11z',
+  cloud:'M7 18a4 4 0 010-8 5 5 0 019.5-1A4 4 0 0117 18z',
+  moon:'M20 14A8 8 0 1110 4a6.5 6.5 0 0010 10z',
+  ring:'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8z',
+  semicircle:'M3 17a9 9 0 0118 0z',
+  speech:'M4 4h16v12H10l-4 4v-4H4z',
+  star4:'M12 2l2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z',
   plus:'M12 5v14M5 12h14',
   minus:'M5 12h14',
   x:'M6 6l12 12M18 6L6 18',
@@ -2029,11 +2048,20 @@ function wireCanvasEvents(){
   $('#vp').addEventListener('mouseleave', ()=>{ S.mouse.inside = false; $('#sbCursor').textContent = 'x —   y —'; drawRulers(); });
   canvas.on('text:changed', ()=> MS.emit('layers'));
 }
+// the bottom-left read-out turns green when a snap point is hit: centred on the artboard, perfect square / circle, or an exact 0 / 90 / 180 / 270 / 360 degrees
 function showHud(obj, extra){
-  const h = $('#hud'); const b = obj.getBoundingRect(true, true);
-  h.style.display = 'block'; h.textContent = extra || (Math.round(b.width) + ' × ' + Math.round(b.height) + '   (' + Math.round(b.left) + ', ' + Math.round(b.top) + ')');
+  const h = $('#hud'); const b = obj.getBoundingRect(true, true), d = S.doc, E = .6, flags = [];
+  const cx = b.left + b.width / 2, cy = b.top + b.height / 2, atX = Math.abs(cx - d.wPx / 2) < E, atY = Math.abs(cy - d.hPx / 2) < E;
+  if(atX && atY) flags.push('✛ centred'); else if(atX) flags.push('↔ centred'); else if(atY) flags.push('↕ centred');
+  const base = extra || (Math.round(b.width) + ' × ' + Math.round(b.height) + '   (' + Math.round(b.left) + ', ' + Math.round(b.top) + ')');
+  if(b.width > 2 && Math.abs(b.width - b.height) < E && !/circle|square/.test(base)) flags.push(obj.type === 'ellipse' || obj.type === 'circle' ? '● circle' : '■ square');
+  const am = /(?:Rotate |∠)(-?\d+(?:\.\d+)?)/.exec(base);
+  if(am){ const a = ((+am[1] % 360) + 360) % 360; if([0, 90, 180, 270].some(x=> Math.abs(a - x) < .05) && !/exact/.test(base)) flags.push('✓ ' + (a === 0 && +am[1] !== 0 ? 360 : a) + '°'); }
+  const tail = /circle|square/.test(base) ? 1 : 0;
+  h.style.display = 'block'; h.textContent = base + (flags.length ? '   ' + flags.join('  ') : '');
+  h.classList.toggle('ok', flags.length > 0 || !!tail);
 }
-function hideHud(){ $('#hud').style.display = 'none'; }
+function hideHud(){ const h = $('#hud'); h.style.display = 'none'; h.classList.remove('ok'); }
 MS.hideHud = hideHud; MS.showHud = showHud;
 
 /* ============================== NAMING / DIRTY ============================== */
@@ -2467,6 +2495,21 @@ function arrowPoints(len, thick, headL, headW){
 }
 const SHAPE_OPT = MS.shapeOpt = { radius:24, rectR:0, sides:6, points:5, inner:.42, lineW:6, outlineW:MS.store.get('outlineW', 6), style:MS.store.get('shapeStyle', 'solid') };   // style: 'solid' | 'line' (outline only)
 
+// more drag-to-draw shapes: outlines as fractions of the drawn box (polygons) or as path data in a 100-unit box (curves)
+const SHAPE_PTS = {
+  diamond:[[.5,0],[1,.5],[.5,1],[0,.5]], rtriangle:[[0,0],[0,1],[1,1]], parallelogram:[[.25,0],[1,0],[.75,1],[0,1]], trapezoid:[[.2,0],[.8,0],[1,1],[0,1]],
+  chevron:[[0,0],[.6,0],[1,.5],[.6,1],[0,1],[.4,.5]], plus:[[.33,0],[.67,0],[.67,.33],[1,.33],[1,.67],[.67,.67],[.67,1],[.33,1],[.33,.67],[0,.67],[0,.33],[.33,.33]],
+  blockarrow:[[0,.3],[.6,.3],[.6,0],[1,.5],[.6,1],[.6,.7],[0,.7]], darrow:[[0,.5],[.25,0],[.25,.3],[.75,.3],[.75,0],[1,.5],[.75,1],[.75,.7],[.25,.7],[.25,1]],
+  bolt:[[.6,0],[.1,.56],[.46,.56],[.32,1],[.9,.4],[.54,.4]],
+};
+const SHAPE_PATH = {
+  heart:'M50 90 C10 62 0 42 0 26 C0 11 12 0 27 0 C38 0 46 6 50 15 C54 6 62 0 73 0 C88 0 100 11 100 26 C100 42 90 62 50 90 Z',
+  cloud:'M25 80 C9 80 0 69 0 57 C0 45 9 37 21 36 C21 16 39 6 55 13 C65 1 91 6 94 29 C100 32 100 41 100 53 C100 70 90 80 75 80 Z',
+  moon:'M20 -45 A45 45 0 1 0 45 20 A36 36 0 1 1 20 -45 Z',
+  ring:'M50 0 A50 50 0 1 1 49.9 0 Z M50 24 A26 26 0 1 0 50.1 24 Z',
+  semicircle:'M0 50 A50 50 0 0 1 100 50 Z',
+  speech:'M10 0 H90 Q100 0 100 10 V60 Q100 70 90 70 H42 L20 95 L26 70 H10 Q0 70 0 60 V10 Q0 0 10 0 Z',
+};
 function makeShape(kind, x0, y0, w, h, p0, p1){
   const outlineOnly = SHAPE_OPT.style === 'line' && kind !== 'line' && kind !== 'arrow', lineCol = S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke;
   const common = outlineOnly ? { fill:'', stroke:lineCol, strokeWidth:Math.max(.5, SHAPE_OPT.outlineW), strokeUniform:true, strokeLineJoin:'miter', originX:'left', originY:'top' }
@@ -2478,6 +2521,10 @@ function makeShape(kind, x0, y0, w, h, p0, p1){
   else if(kind === 'triangle') o = new fabric.Triangle({ ...common, left:x0, top:y0, width:w, height:h });
   else if(kind === 'polygon') o = new fabric.Polygon(polyPoints(SHAPE_OPT.sides, w, h), { ...common, left:x0, top:y0 });
   else if(kind === 'star') o = new fabric.Polygon(polyPoints(SHAPE_OPT.points, w, h, SHAPE_OPT.inner), { ...common, left:x0, top:y0 });
+  else if(SHAPE_PTS[kind]) o = new fabric.Polygon(SHAPE_PTS[kind].map(([px, py])=> ({ x:px * w, y:py * h })), { ...common, left:x0, top:y0 });
+  else if(kind === 'pentagon' || kind === 'hexagon' || kind === 'octagon') o = new fabric.Polygon(polyPoints(kind === 'pentagon' ? 5 : kind === 'hexagon' ? 6 : 8, w, h), { ...common, left:x0, top:y0 });
+  else if(kind === 'star4') o = new fabric.Polygon(polyPoints(4, w, h, .38), { ...common, left:x0, top:y0 });
+  else if(SHAPE_PATH[kind]){ o = new fabric.Path(SHAPE_PATH[kind], { ...common }); o.set({ left:x0, top:y0, scaleX:w / Math.max(1, o.width), scaleY:h / Math.max(1, o.height) }); }
   else if(kind === 'line'){
     const col = S.noStroke ? (S.noFill ? '#000000' : S.fill) : S.stroke;
     o = new fabric.Line([p0.x, p0.y, p1.x, p1.y], { stroke: col, strokeWidth: Math.max(1, SHAPE_OPT.lineW), strokeLineCap:'round', strokeUniform:true });
@@ -2490,7 +2537,7 @@ function makeShape(kind, x0, y0, w, h, p0, p1){
   }
   return o;
 }
-function describe(kind){ return { rect:'Rectangle', rrect:'Rounded rectangle', ellipse:'Ellipse', triangle:'Triangle', polygon:'Polygon', star:'Star', line:'Line', arrow:'Arrow' }[kind] || kind; }
+function describe(kind){ return { rect:'Rectangle', rrect:'Rounded rectangle', ellipse:'Ellipse', triangle:'Triangle', polygon:'Polygon', star:'Star', line:'Line', arrow:'Arrow', diamond:'Diamond', rtriangle:'Right triangle', pentagon:'Pentagon', hexagon:'Hexagon', octagon:'Octagon', parallelogram:'Parallelogram', trapezoid:'Trapezoid', chevron:'Chevron', plus:'Plus', blockarrow:'Block arrow', darrow:'Double arrow', bolt:'Lightning bolt', heart:'Heart', cloud:'Cloud', moon:'Moon', ring:'Ring', semicircle:'Semicircle', speech:'Speech bubble', star4:'4-point star' }[kind] || kind; }
 
 function shapeTool(kind, icon, key, label){
   let start = null, temp = null, lastP = null;
@@ -2569,7 +2616,10 @@ reg({ id:'zoom', label:'Zoom', icon:'zoom', key:'Z', lock:true, cursor:'zoom-in'
 });
 
 [['rect','rect','R','Rectangle / square'],['rrect','rrect','Q','Rounded square / rectangle'],['ellipse','ellipse','O','Ellipse / circle'],['triangle','triangle','','Triangle'],
- ['polygon','polygon','','Polygon'],['star','star','','Star'],['line','line','L','Line'],['arrow','arrow','','Arrow']].forEach(([k, ic, key, label])=>{
+ ['polygon','polygon','','Polygon'],['star','star','','Star'],['line','line','L','Line'],['arrow','arrow','','Arrow'],
+ ['diamond','diamond','','Diamond'],['rtriangle','rtriangle','','Right triangle'],['pentagon','pentagon','','Pentagon'],['hexagon','hexp','','Hexagon'],['octagon','octagon','','Octagon'],['parallelogram','parallelogram','','Parallelogram'],['trapezoid','trapezoid','','Trapezoid'],
+ ['chevron','chevron','','Chevron'],['plus','plus','','Plus / cross'],['blockarrow','blockarrow','','Block arrow'],['darrow','darrow','','Double arrow'],['bolt','bolt','','Lightning bolt'],['heart','heart','','Heart'],['cloud','cloud','','Cloud'],
+ ['moon','moon','','Moon / crescent'],['ring','ring','','Ring / donut'],['semicircle','semicircle','','Semicircle'],['speech','speech','','Speech bubble'],['star4','star4','','4-point star']].forEach(([k, ic, key, label])=>{
   const d = shapeTool(k, ic, key, label);
   d.isShape = true;
   if(k === 'ellipse' || k === 'rrect') d.group = null;   // own toolbox buttons, not in the shapes flyout
@@ -2952,7 +3002,7 @@ function styleHover(b){
   const open = ()=>{
     kill(); const r = b.getBoundingClientRect(); pop = document.createElement('div'); pop.className = 'flyout shape-style';
     const row = (v, label, svg)=> `<button data-v="${v}" class="${SHAPE_OPT.style === v ? 'active' : ''}"><svg class="ic" viewBox="0 0 24 24" width="18" height="18">${svg}</svg><span>${label}</span></button>`;
-    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><div class="f" style="width:78px"><input type="number" id="ssW" min="0.5" step="1" value="${SHAPE_OPT.outlineW}"><em>px</em></div></div>`;
+    pop.innerHTML = row('solid', 'Solid', '<rect x="4" y="5" width="16" height="14" rx="2" fill="currentColor"/>') + row('line', 'Outline (line)', '<rect x="4.8" y="5.8" width="14.4" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>') + `<div class="ss-w" style="display:flex;align-items:center;gap:8px;padding:6px 10px 4px"><span class="hint" style="flex:1">Outline width</span><input type="range" id="ssW" min="0.5" max="100" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:84px"></div>`;
     document.body.appendChild(pop); pop.style.left = (r.right + 6) + 'px'; pop.style.top = Math.min(r.top, innerHeight - pop.offsetHeight - 8) + 'px';
     pop.addEventListener('mouseenter', ()=> clearTimeout(leave)); pop.addEventListener('mouseleave', ()=>{ leave = setTimeout(kill, 250); });
     pop.addEventListener('input', e=>{ if(e.target.id === 'ssW'){ const v = parseFloat(e.target.value); if(v > 0){ SHAPE_OPT.outlineW = v; MS.store.set('outlineW', v); } } });
@@ -2966,7 +3016,7 @@ function openFlyout(btn, group){
   const items = order.filter(id=> defs[id].group === group);
   const r = btn.getBoundingClientRect();
   MS.closeMenus();
-  const m = document.createElement('div'); m.className = 'flyout';
+  const m = document.createElement('div'); m.className = 'flyout' + (items.length > 8 ? ' shapes-fly' : '');
   m.innerHTML = items.map(id=> `<button data-id="${id}" class="${S.tool === id ? 'active' : ''}">${MS.icon(defs[id].icon)}<span>${MS.esc(defs[id].label)}</span>${defs[id].key ? '<kbd>' + defs[id].key + '</kbd>' : ''}</button>`).join('');
   document.body.appendChild(m);
   m.style.left = (r.right + 6) + 'px'; m.style.top = Math.min(r.top, innerHeight - m.offsetHeight - 8) + 'px';
@@ -3008,9 +3058,9 @@ T.renderOptions = function(){
   const radiusHtml = ()=> `<div class="og radius-og"><label>Corner radius${kind === 'rect' ? ' (0 = sharp)' : ''}</label><input type="range" id="obRadius" min="0" max="${rmax}" value="${Math.min(rmax, SHAPE_OPT[radKey])}" style="width:150px"><div class="f" style="width:78px"><input type="number" id="obRadiusN" min="0" step="1" value="${SHAPE_OPT[radKey]}"><em>px</em></div>
       <span class="chips">${[0, 8, 24, 48, 100, 200, 500, 1000].filter(r=> r <= rmax).map(r=> `<span class="chip" data-radius="${r}">${r}</span>`).join('') + '<span class="chip" data-radius="100000" data-tip="Fully rounded ends / circle">Full</span>'}</span></div>`;
   if(shapeLike){
+    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><input type="range" id="obOutW" min="0.5" max="100" step="0.5" value="${SHAPE_OPT.outlineW}" style="width:110px"></div>`;
     if(kind === 'rect' || kind === 'rrect') h += radiusHtml();
     h += fillStroke();
-    if(kind !== 'line' && kind !== 'arrow') h += `<div class="og"><label>Draw as</label><div class="seg" id="obStyle"><button data-v="solid" class="${SHAPE_OPT.style === 'solid' ? 'active' : ''}">Solid</button><button data-v="line" class="${SHAPE_OPT.style === 'line' ? 'active' : ''}">Outline</button></div><label>Width</label><div class="f" style="width:72px"><input type="number" id="obOutW" min="0.5" step="1" value="${SHAPE_OPT.outlineW}" style="padding-left:8px"></div></div>`;
     if(kind === 'polygon') h += `<div class="og"><label>Sides</label><div class="f" style="width:64px"><input type="number" id="obSides" min="3" max="24" value="${SHAPE_OPT.sides}" style="padding-left:8px"></div></div>`;
     if(kind === 'star') h += `<div class="og"><label>Points</label><div class="f" style="width:64px"><input type="number" id="obPoints" min="3" max="24" value="${SHAPE_OPT.points}" style="padding-left:8px"></div><label>Inner</label><input type="range" id="obInner" min="10" max="90" value="${Math.round(SHAPE_OPT.inner*100)}" style="width:90px"></div>`;
     if(kind === 'line' || kind === 'arrow') h += `<div class="og"><label>Thickness</label><input type="range" id="obLineW" min="1" max="80" value="${SHAPE_OPT.lineW}" style="width:110px"></div>`;
@@ -4185,7 +4235,8 @@ function paintLayers(){
     const locked = !!obj.lockMovementX;
     row.innerHTML = `<div class="layer-grip" title="Drag to reorder">⠿</div><div class="layer-thumb"><img draggable="false"></div><div class="lname" title="Double-click to rename"></div>${kind ? '<span class="layer-badge">' + kind + '</span>' : ''}
       <button class="lb ${obj.visible === false ? 'off' : ''}" data-a="vis" title="Show / hide">${MS.icon(obj.visible === false ? 'eyeoff' : 'eye')}</button>
-      <button class="lb ${locked ? '' : 'off'}" data-a="lock" title="Lock / unlock">${MS.icon(locked ? 'lock' : 'unlock')}</button>`;
+      <button class="lb ${locked ? '' : 'off'}" data-a="lock" title="Lock / unlock">${MS.icon(locked ? 'lock' : 'unlock')}</button>
+      <button class="lb del" data-a="del" title="Delete this layer">${MS.icon('trash')}</button>`;
     const nm = row.querySelector('.lname'); nm.textContent = obj.name || obj.type;
     const im = row.querySelector('img'); const t = thumbOf(obj); if(t) im.src = t; else im.remove();
     nm.addEventListener('dblclick', e=>{ e.stopPropagation(); nm.contentEditable = 'true'; nm.focus(); document.execCommand('selectAll', false, null); });
@@ -4196,6 +4247,7 @@ function paintLayers(){
       if(a){
         e.stopPropagation();
         if(a.dataset.a === 'vis'){ obj.visible = obj.visible === false; if(!obj.visible && sel.has(obj)) c.discardActiveObject(); c.requestRenderAll(); MS.commit(obj.visible ? 'Show layer' : 'Hide layer'); }
+        else if(a.dataset.a === 'del'){ if(obj.lockMovementX && !obj.selectable){ toast('This layer is locked - unlock it first.'); return; } c.discardActiveObject(); c.remove(obj); c.requestRenderAll(); MS.commit('Delete layer'); }
         else { MS.ops.toggleLock(obj); MS.commit(obj.lockMovementX ? 'Lock layer' : 'Unlock layer'); }
         return;
       }
