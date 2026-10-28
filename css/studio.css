@@ -595,6 +595,8 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 
 
 /* live symmetry button + settings, shape style hover menu */
+.shape-style.nudge{animation:ssNudge .45s ease;}
+@keyframes ssNudge{0%{transform:none;box-shadow:0 0 0 3px #3ddc84,0 0 24px #3ddc84;border-color:#3ddc84}15%{transform:translateX(-8px)}35%{transform:translateX(8px)}55%{transform:translateX(-6px);box-shadow:0 0 0 3px #3ddc84,0 0 24px #3ddc84;border-color:#3ddc84}75%{transform:translateX(5px)}100%{transform:none}}
 .shape-style button{min-width:150px;} .shape-style .ic{flex:none;}
 #toolbox .tool.sym-on{background:var(--accbg);border-color:var(--accln);color:var(--acc2);box-shadow:inset 0 0 0 1px var(--accln);}
 .sym-pop{position:fixed;z-index:3000;width:262px;background:var(--bg2);border:1px solid var(--line2);border-radius:10px;padding:10px;box-shadow:0 10px 36px #000a;display:flex;flex-direction:column;gap:8px;font-size:12px;}
