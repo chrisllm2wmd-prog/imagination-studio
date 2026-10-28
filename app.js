@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.22 beta';
+window.IMAGINATION_VERSION = '4.23 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', ()=>{ const sb = document.getElementById('statusbar'); if(!sb) return; const s = document.createElement('span'); s.className = 'sb-ver'; s.textContent = 'v' + window.IMAGINATION_VERSION; s.style.cssText = 'margin-left:auto;padding:0 10px;color:var(--dim);font-size:11px;white-space:nowrap'; sb.appendChild(s); });
 
@@ -640,6 +640,10 @@ window.MSI = { svg, hydrate, names:Object.keys(P) };
 
 const MS = window.MS = window.MS || {};
 MS.version = '2.0';
+// every change this app makes to Fabric's drawing methods records itself here, in the order applied (see the list in NOTES.md);
+// the smoke test checks the order, because a patch that wraps another depends on which script ran first
+MS.renderPatches = [];
+MS.testMode = /[?&]test=1(&|$)/.test(location.search);   // test.html runs the app with this: no autosave, no leave-site prompt
 const $ = MS.$ = (s, el)=> (el||document).querySelector(s);
 const $$ = MS.$$ = (s, el)=> Array.from((el||document).querySelectorAll(s));
 MS.clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
@@ -819,7 +823,7 @@ MS.showPage = function(page){
   MS.emit('page', page);
 };
 function wireDock(){
-  $$('.dock-tab').forEach(t=> t.addEventListener('click', ()=> MS.showPage(t.dataset.page)));
+  $$('.dock-tab').forEach(t=>{ t.addEventListener('click', ()=> MS.showPage(t.dataset.page)); if(!t.title) t.title = t.textContent.trim(); });
   // splitter between the two dock groups
   const sp = $('#dockSplit'), top = $('#dockTop'), bot = $('#dockBottom'), dock = $('#dock');
   sp.addEventListener('pointerdown', e=>{
@@ -1617,7 +1621,16 @@ function onResize(){
 }
 
 /* ============================== DOCUMENT ============================== */
+// project "extras" saved next to the canvas (ad settings, group links, animation...): each module registers its own part
+// instead of wrapping the others, so the order scripts load in no longer matters
+const extras = [];
+MS.registerExtra = (key, collect, restore)=>{ extras.push({ key, collect, restore }); };
+MS.collectExtra = ()=> extras.reduce((o, x)=> Object.assign(o, x.collect() || {}), {});
+MS.restoreExtra = ex=> extras.forEach(x=>{ try{ x.restore(ex || {}); }catch(e){ console.error('restore ' + x.key, e); } });
+const newDocHooks = [];
+MS.onNewDoc = fn=>{ newDocHooks.push(fn); };   // runs before a new design replaces the current one
 MS.newDoc = function(o){
+  newDocHooks.forEach(fn=>{ try{ fn(o); }catch(e){ console.error(e); } });
   o = o || {};
   const d = S.doc;
   d.name = o.name || 'Untitled design';
@@ -2155,7 +2168,7 @@ MS.projectPayload = function(){
   return { v:2, meta: Object.assign({}, S.doc, { guides:S.guides, ws: document.body.dataset.ws }), canvasJSON: canvas.toJSON(SERIALIZE_PROPS), extra: MS.collectExtra ? MS.collectExtra() : {} };
 };
 async function doAutosave(){
-  if(!canvas || !S.ready || !canvas.getObjects().length) return;   // an empty new design never overwrites the last recovery copy
+  if(!canvas || !S.ready || !canvas.getObjects().length || MS.testMode) return;   // an empty new design never overwrites the last recovery copy; neither does the smoke test
   try{
     const db = await openDB();
     await new Promise((res, rej)=>{ const tx = db.transaction(AUTOSAVE_STORE, 'readwrite'); tx.objectStore(AUTOSAVE_STORE).put({ payload: MS.projectPayload(), savedAt: Date.now() }, AUTOSAVE_KEY); tx.oncomplete = res; tx.onerror = ()=>rej(tx.error); });
@@ -2456,7 +2469,7 @@ MS.initCore = function(){
     e.preventDefault(); dragN = 0; veil.classList.remove('on');
     if(e.dataTransfer.files && e.dataTransfer.files.length) MS.importFiles(e.dataTransfer.files, e);
   });
-  window.addEventListener('beforeunload', e=>{ if(S.dirty && S.ready && (canvas.getObjects().length)){ doAutosave(); e.preventDefault(); e.returnValue = ''; } });   // browser shows its own "Leave site?" prompt
+  window.addEventListener('beforeunload', e=>{ if(S.dirty && S.ready && (canvas.getObjects().length) && !MS.testMode){ doAutosave(); e.preventDefault(); e.returnValue = ''; } });   // browser shows its own "Leave site?" prompt
   window.addEventListener('dragover', e=> e.preventDefault()); window.addEventListener('drop', e=> e.preventDefault());
 };
 
@@ -2527,6 +2540,7 @@ function traceRounded(ctx, pts, r, corners){
   }
 }
 (function(){
+  MS.renderPatches.push('tools: Polygon.commonRender, Triangle._render, Rect._render (rounded corners)');
   const polyCommon = fabric.Polygon.prototype.commonRender;
   fabric.Polygon.prototype.commonRender = function(ctx){
     if(!(this.__round > 0) || !this.points || this.points.length < 3) return polyCommon.call(this, ctx);
@@ -3249,6 +3263,9 @@ function shapeLibrary(x, y){
   MS.menu(items.map(([k, l])=>({ label:l, icon:'star', action:()=> MS.shapeLib(k) })), x, y);
 }
 MS.shapeLib = function(k){
+  // shapes the main system already draws come from there, so a library heart / hexagon / bolt matches a drawn one
+  const same = { diamond:'diamond', pentagon:'pentagon', hexagon:'hexagon', octagon:'octagon', chevron:'chevron', bolt:'bolt', crescent:'moon', heart:'heart', speech:'speech', cross:'plus' }[k];
+  if(same) return T.addShape(same);
   const size = Math.min(S.doc.wPx, S.doc.hPx) * .35;
   const common = { fill:fillValue(), stroke:strokeValue(), strokeWidth:S.noStroke ? 0 : S.strokeW, strokeUniform:true, originX:'center', originY:'center', left:S.doc.wPx/2, top:S.doc.hPx/2 };
   const reg = (n, r)=> polyPoints(n, r*2, r*2).map(p=>({ x:p.x - r, y:p.y - r }));
@@ -3269,9 +3286,9 @@ MS.shapeLib = function(k){
   else if(k === 'crescent') o = new fabric.Path('M 20 -45 A 45 45 0 1 0 45 20 A 36 36 0 1 1 20 -45 Z', { ...common, scaleX:size/100, scaleY:size/100 });
   else if(k === 'drop') o = new fabric.Path('M 0 -50 C 20 -20 40 0 40 22 A 40 40 0 0 1 -40 22 C -40 0 -20 -20 0 -50 Z', { ...common, scaleX:size/100, scaleY:size/100 });
   else if(k === 'gear'){ const pts = []; const teeth = 10; for(let i = 0; i < teeth*4; i++){ const a = -Math.PI/2 + i * 2*Math.PI / (teeth*4), r = (i % 4 < 2) ? .5 : .38; pts.push({ x:Math.cos(a)*r*size, y:Math.sin(a)*r*size }); } o = new fabric.Polygon(pts, common); }
-  else { T.addShape(k); return; }
+  else { toast('Unknown shape: ' + k); return; }
   outlineStyle(o); o.__kind = k;
-  o.name = MS.nextName('polygon');
+  o.name = MS.nextName(k.replace(/\d+$/, ''));
   const c = cv(); c.add(o); c.discardActiveObject(); c.setActiveObject(o); c.requestRenderAll(); MS.commit('Add shape');
 };
 
@@ -5130,6 +5147,7 @@ function remeasure(){
 }
 (function(){
   const own = Object.prototype.hasOwnProperty.call(fabric.Text.prototype, 'render') ? fabric.Text.prototype.render : null;   // (never capture Object's: effects.js wraps it later)
+  MS.renderPatches.push('fonts: Text.render (wait for the font)');
   fabric.Text.prototype.render = function(ctx){ if(pending(this)) return; (own || fabric.Object.prototype.render).call(this, ctx); };
   // measuring with a stand-in font would store the wrong size: ask for the font as soon as the layer exists
   const init = fabric.Text.prototype.initDimensions;
@@ -5649,6 +5667,7 @@ function underlayExtra(o, ctx, mode){
   } finally { o.__fxPass = false; }
 }
 (function(){
+  MS.renderPatches.push('effects: Object.render (effect underlays)');
   const origRender = fabric.Object.prototype.render;
   fabric.Object.prototype.render = function(ctx){
     if(!this.__fxPass && this.__fx && this.__fx.stack && anyOn(this) && !this.isNotVisible()){ try{ underlayExtra(this, ctx); underlay(this, ctx); }catch(e){ console.error(e); } }
@@ -5719,6 +5738,7 @@ function cuttersFor(o){
   return out;
 }
 (function(){
+  MS.renderPatches.push('effects: Object.render (pass-through cut-outs, wraps the underlays)');
   const baseRender = fabric.Object.prototype.render;
   fabric.Object.prototype.render = function(ctx){
     if(hidden(this)) return;
@@ -6411,8 +6431,11 @@ const MK_PLACEMENTS = {
   sleeveL:{ label:'Left sleeve',     widthIn:3,  sleeve:'L' },
   sleeveR:{ label:'Right sleeve',    widthIn:3,  sleeve:'R' },
 };
-const mk = { open:false, garment:'tee', view:'front', place:'chest', widthIn:10, dx:0, dy:0, img:null, timer:null, busy:false };
-let mkCtx = null;
+const mk = { open:false, pageOpen:false, garment:'tee', view:'front', place:'chest', widthIn:10, dx:0, dy:0, img:null, timer:null, busy:false };
+let mkCtx = null, heroCtx = null;
+// the big mockup beside the canvas (Merch workspace): on by default, can be hidden, width remembered
+const heroOn = ()=> document.body.dataset.ws === 'merch' && MS.store.get('mkHero', true);
+function refreshOpen(){ const was = mk.open; mk.open = mk.pageOpen || heroOn(); const h = $('#mkHero'); if(h){ const on = heroOn(); if(h.hidden === on){ h.hidden = !on; MS.emit('resize'); setTimeout(()=> MS.view && MS.view.fit(), 80); } } const t = $('#mkHeroToggle'); if(t) t.classList.toggle('active', MS.store.get('mkHero', true)); if(mk.open && !was) capture(); }
 
 function mkStrokeLine(ctx, pts, w, style){
   ctx.strokeStyle = style; ctx.lineWidth = w;
@@ -6587,6 +6610,7 @@ function drawMockup(){
   const pw = mk.widthIn, ph = pw * (S.doc.hPx / S.doc.wPx);
   $('#mkSizeLabel').textContent = pw.toFixed(1) + '"';
   $('#mkNote').textContent = 'Print ≈ ' + pw.toFixed(1) + ' × ' + ph.toFixed(1) + ' in — the whole artboard is placed, so empty margins count.';
+  if(heroCtx && heroOn()){ heroCtx.clearRect(0, 0, W, H); heroCtx.drawImage(ctx.canvas, 0, 0); const hl = $('#mkhNote'); if(hl) hl.textContent = MK_GARMENTS[mk.garment].label + ' · ' + (P.label || '') + ' · ' + pw.toFixed(1) + ' × ' + ph.toFixed(1) + ' in'; }
 }
 function capture(){
   if(!mk.open || !cv() || !S.ready) return;
@@ -6609,6 +6633,7 @@ function build(){
     <div class="r"><label style="width:62px">Up / down</label><input type="range" id="mkDy" min="-250" max="400" step="1"></div>
     <div class="r"><label style="width:62px">Left / right</label><input type="range" id="mkDx" min="-300" max="300" step="1"></div>
     <div class="hint">Garment colour</div><div class="swgrid" id="mkSwatches"></div>
+    <div class="tb-row fill"><button class="btn sm" id="mkHeroToggle" data-tip="Big mockup beside the canvas|shows the product large while you edit"><i data-i="shirt"></i>Big mockup</button></div>
     <div class="tb-row fill"><button class="btn sm" id="mkFit"><i data-i="fit"></i>Set artboard to print size</button><button class="btn sm" id="mkSave"><i data-i="download"></i>Save mockup PNG</button></div>
     <div class="hint" id="mkNote"></div></div></div>`;
   window.MSI.hydrate(page);
@@ -6617,18 +6642,45 @@ function build(){
   const clearChip = document.createElement('div'); clearChip.className = 's none'; clearChip.title = 'Clear (see-through)'; clearChip.style.background = '#fff'; clearChip.onclick = ()=> MS.setGarment(S.doc.garment, true); sw.appendChild(clearChip);
   ['#ffffff','#000000','#0d1b2a','#1b3a4b','#7a1f2b','#2e5339','#d4a017','#e8e2d0','#9aa0a6','#c9184a','#3d3d3d','#6b4423'].forEach(c=>{ const s = document.createElement('div'); s.className = 's'; s.style.background = c; s.title = c; s.onclick = ()=> MS.setGarment(c, false); sw.appendChild(s); });
   const fillPlaces = ()=>{ $('#mkPlace').innerHTML = Object.entries(pl()).map(([k, v])=>`<option value="${k}">${v.label}</option>`).join(''); $('#mkPlace').value = mk.place; };
-  const sync = ()=>{ $('#mkGarment').value = mk.garment; $('#mkView').value = mk.view; fillPlaces(); $('#mkSize').value = mk.widthIn; $('#mkDx').value = mk.dx; $('#mkDy').value = mk.dy; MS.syncRanges(page); };
+  const sync = ()=>{ $('#mkGarment').value = mk.garment; $('#mkView').value = mk.view; fillPlaces(); $('#mkSize').value = mk.widthIn; $('#mkDx').value = mk.dx; $('#mkDy').value = mk.dy; MS.syncRanges(page); const hg = $('#mkhGarment'); if(hg){ hg.value = mk.garment; $$('#mkhView button').forEach(b=> b.classList.toggle('active', b.dataset.v === mk.view)); } };
   const choose = k=>{ mk.place = k; mk.widthIn = (pl()[k] || {}).widthIn || 10; mk.dx = 0; mk.dy = 0; sync(); };
   $('#mkGarment').onchange = e=>{ mk.garment = e.target.value; choose(Object.keys(pl())[0]); drawMockup(); };
   $('#mkView').onchange = e=>{ mk.view = e.target.value; drawMockup(); };
   $('#mkPlace').onchange = e=>{ choose(e.target.value); drawMockup(); };
   $('#mkSize').oninput = e=>{ mk.widthIn = +e.target.value; drawMockup(); }; $('#mkDx').oninput = e=>{ mk.dx = +e.target.value; drawMockup(); }; $('#mkDy').oninput = e=>{ mk.dy = +e.target.value; drawMockup(); };
+  $('#mkHeroToggle').onclick = ()=>{ MS.store.set('mkHero', !MS.store.get('mkHero', true)); if(MS.store.get('mkHero', true) && document.body.dataset.ws !== 'merch') MS.setWorkspace('merch'); refreshOpen(); drawMockup(); };
+  buildHero();
   $('#mkSave').onclick = ()=> $('#mkCanvas').toBlob(b=>{ if(b) MS.saveFile(b, (S.doc.name || 'design') + '-mockup-' + mk.garment + '.png').then(m=> toast('Mockup ' + m, 6000)); }, 'image/png');
   $('#mkFit').onclick = ()=>{ const w = mk.widthIn; MS.resizeDoc(w * MS.WORKING_PPI, w * MS.WORKING_PPI * (S.doc.hPx / S.doc.wPx)); MS.view.fit(); toast('Artboard is now the print size (' + w + '" wide).'); };
   sync();
   MS.mockup = { state:mk, sync, choose, set(o){ Object.assign(mk, o); if(o.garment && !o.place) choose(Object.keys(pl())[0]); sync(); drawMockup(); } };
 }
-MS.on('page', p=>{ if(p === 'merch'){ mk.open = true; capture(); } else if(['design','fill','canvas','ad','claude'].includes(p)){ mk.open = false; } });
+// big mockup pane: sits to the right of the canvas, inside a row wrapped round #vpWrap; drag its left edge to resize
+function buildHero(){
+  const vpWrap = $('#vpWrap'); if(!vpWrap || $('#mkHero')) return;
+  const row = document.createElement('div'); row.id = 'canvasRow'; vpWrap.before(row); row.appendChild(vpWrap);
+  const h = document.createElement('div'); h.id = 'mkHero'; h.hidden = true; h.style.width = MS.store.get('mkHeroW', 460) + 'px';
+  h.innerHTML = `<div class="mkh-grip" title="Drag to resize"></div>
+    <div class="mkh-bar"><select id="mkhGarment">${Object.entries(MK_GARMENTS).map(([k, v])=>`<option value="${k}">${v.label}</option>`).join('')}</select>
+      <div class="seg" id="mkhView"><button data-v="front">Front</button><button data-v="back">Back</button></div><span class="sp"></span>
+      <button class="ib" id="mkhSave" data-tip="Save mockup PNG"><i data-i="download"></i></button><button class="ib" id="mkhClose" data-tip="Hide the big mockup|turn it back on in the Merch tab"><i data-i="x"></i></button></div>
+    <div class="mkh-stage"><canvas id="mkHeroCanvas" width="1000" height="1100"></canvas></div>
+    <div class="mkh-note" id="mkhNote"></div>`;
+  row.appendChild(h); window.MSI.hydrate(h);
+  heroCtx = $('#mkHeroCanvas').getContext('2d');
+  $('#mkhGarment').onchange = e=> MS.mockup.set({ garment:e.target.value });
+  $('#mkhView').onclick = e=>{ const b = e.target.closest('button'); if(b) MS.mockup.set({ view:b.dataset.v }); };
+  $('#mkhSave').onclick = ()=> $('#mkSave').click();
+  $('#mkhClose').onclick = ()=>{ MS.store.set('mkHero', false); refreshOpen(); };
+  $('.mkh-grip', h).addEventListener('pointerdown', e=>{
+    e.preventDefault(); const x0 = e.clientX, w0 = h.offsetWidth, grip = e.currentTarget; grip.setPointerCapture(e.pointerId);
+    const mv = ev=>{ h.style.width = Math.max(260, Math.min(row.offsetWidth * .7, w0 + x0 - ev.clientX)) + 'px'; };
+    const up = ()=>{ grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); MS.store.set('mkHeroW', h.offsetWidth); MS.emit('resize'); };
+    grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up);
+  });
+}
+MS.on('page', p=>{ if(p === 'merch'){ mk.pageOpen = true; refreshOpen(); capture(); } else if(['design','fill','canvas','ad','claude','anim'].includes(p)){ mk.pageOpen = false; refreshOpen(); } });
+MS.on('workspace', ()=>{ refreshOpen(); if(mk.open){ capture(); MS.mockup && MS.mockup.sync(); } });
 MS.on('mockup-dirty', schedule);
 MS.initMerch = function(){
   build();
@@ -7439,6 +7491,27 @@ function build(){
     sect('layout', 'Layout', `<div class="tpl-grid" id="adTpls"></div>`) +
     sect('export', 'Export', `<div class="tb-row fill"><button class="btn" id="adExportAll">${MS.icon('download')}All sizes (ZIP)…</button><button class="btn" id="adExportOne">${MS.icon('export')}This size…</button></div>`);
   window.MSI.hydrate(page); MS.wireAccordions(page);
+  // the four steps as a numbered wizard: one step open at a time, Next moves on, the last step leads to Write & build
+  const STEPS = [['theme', 'Theme'], ['campaign', 'Campaign'], ['voice', 'Voice'], ['style', 'Style']];
+  const stepBar = document.createElement('div'); stepBar.className = 'ad-steps';
+  stepBar.innerHTML = STEPS.map(([k, l], i)=> `<button data-k="${k}"><b>${i + 1}</b>${l}</button>`).join('');
+  page.insertBefore(stepBar, page.firstChild);
+  const goStep = k=>{
+    STEPS.forEach(([sk])=>{ const sec = $('.sect[data-sect="ad-' + sk + '"]', page); if(sec){ sec.classList.toggle('collapsed', sk !== k); MS.store.set('sect.ad-' + sk, sk !== k); } });
+    $$('button', stepBar).forEach(b=> b.classList.toggle('active', b.dataset.k === k));
+    const sec = $('.sect[data-sect="ad-' + k + '"]', page); if(sec) sec.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  };
+  stepBar.addEventListener('click', e=>{ const b = e.target.closest('button'); if(b) goStep(b.dataset.k); });
+  STEPS.forEach(([k], i)=>{
+    const body = $('.sect[data-sect="ad-' + k + '"] > .sect-b', page); if(!body) return;
+    const nx = document.createElement('button'); nx.className = 'btn sm ad-next';
+    nx.textContent = i < STEPS.length - 1 ? 'Next: ' + STEPS[i + 1][1] + ' →' : 'Write & build ad →';
+    nx.onclick = ()=> i < STEPS.length - 1 ? goStep(STEPS[i + 1][0]) : $('#adBuild').click();
+    body.appendChild(nx);
+    $('.sect[data-sect="ad-' + k + '"] > .sect-h', page).addEventListener('click', ()=> setTimeout(()=> $$('button', stepBar).forEach(b=> b.classList.toggle('active', !$('.sect[data-sect="ad-' + b.dataset.k + '"]', page).classList.contains('collapsed'))), 0));
+  });
+  const openStep = STEPS.find(([k])=>{ const sec = $('.sect[data-sect="ad-' + k + '"]', page); return sec && !sec.classList.contains('collapsed'); });
+  goStep(openStep ? openStep[0] : 'theme');
   // sizes
   const sizes = $('#adSizes');
   sizes.innerHTML = SIZES.map(([g, list])=> `<div class="hint" style="margin-top:6px">${g}</div>` + list.map(([n, w, h])=>`<div class="size-item" data-w="${w}" data-h="${h}"><span>${n}</span><span class="d">${w}×${h}</span></div>`).join('')).join('');
@@ -7556,8 +7629,8 @@ async function exportAll(){
 }
 
 MS.ads = { exportAll, build:buildOnCanvas, setSize:setAdSize, debug:()=>({ S, G, designFor }) };
-MS.collectExtra = ()=> ({ adG:JSON.parse(JSON.stringify(G, (k, v)=> (k === 'images' || k === 'dataImages') ? undefined : v)), adS:{ template:S.template, copy:S.copy, auto:S.auto } });
-MS.restoreExtra = ex=>{ if(ex && ex.adS){ Object.assign(S.copy, ex.adS.copy); S.template = ex.adS.template; S.auto = ex.adS.auto; builtSig = null; } if(ex && ex.adG) Object.assign(G, ex.adG); refreshUi(); };
+MS.registerExtra('ads', ()=> ({ adG:JSON.parse(JSON.stringify(G, (k, v)=> (k === 'images' || k === 'dataImages') ? undefined : v)), adS:{ template:S.template, copy:S.copy, auto:S.auto } }),
+  ex=>{ if(ex && ex.adS){ Object.assign(S.copy, ex.adS.copy); S.template = ex.adS.template; S.auto = ex.adS.auto; builtSig = null; } if(ex && ex.adG) Object.assign(G, ex.adG); refreshUi(); });
 MS.initAds = function(){
   loadG(); S.copy.headline = S.copy.headline || 'Your Big Headline Goes Here';
   build();
@@ -7867,9 +7940,7 @@ MS.initGroups = function(){
   $('#grpImport').onclick = ()=> $('#grpFile').click(); $('#grpFile').onchange = e=>{ if(e.target.files[0]) importGroupFile(e.target.files[0]); e.target.value = ''; };
   MS.on('selection', onSelection); MS.on('layers', scheduleRender); MS.on('history', scheduleRender);
   document.addEventListener('keydown', e=>{ if(e.key === 'Alt') altDown = true; }); document.addEventListener('keyup', e=>{ if(e.key === 'Alt') altDown = false; }); window.addEventListener('blur', ()=>{ altDown = false; });
-  const prevC = MS.collectExtra, prevR = MS.restoreExtra;
-  MS.collectExtra = ()=> Object.assign(prevC ? prevC() : {}, { links:S.links });
-  MS.restoreExtra = ex=>{ S.links = (ex && ex.links) || {}; prevR && prevR(ex); };
+  MS.registerExtra('links', ()=> ({ links:S.links }), ex=>{ S.links = ex.links || {}; });
   MS.on('doc', ()=>{ S.links = S.links || {}; scheduleRender(); });
   MS.addCommand && MS.addCommand({ title:'Save selection to assets', cat:'File', kw:'asset library group save', run:saveSelection });
   render(); renderLibrary();
@@ -8439,6 +8510,7 @@ function morphPath(m, u){
   m.glyphs.forEach(g=> g.forEach(([A, B])=>{ for(let i = 0; i < MN; i++){ const a = A[i], b = B[i], x = a.x + (b.x - a.x) * u, y = a.y + (b.y - a.y) * u; if(i) p.lineTo(x, y); else p.moveTo(x, y); } p.closePath(); }));
   return p;
 }
+MS.renderPatches.push('anim: Text._render, Polygon._render (morph)');
 const textRender = fabric.Text.prototype._render;
 fabric.Text.prototype._render = function(ctx){
   const m = this.__morph;
@@ -8633,6 +8705,62 @@ async function renderFrames(o, progress){
   return frames;
 }
 
+/* APNG: full colour + soft transparency, plays in every browser. Each frame is a normal PNG from the canvas; its IDAT data is
+   re-labelled as fdAT and wrapped with the animation chunks (acTL / fcTL), so no compressor is needed here. */
+const CRC = (()=>{ const t = new Uint32Array(256); for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function pngChunk(type, data){
+  const out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer); dv.setUint32(0, data.length);
+  for(let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i); out.set(data, 8);
+  let c = 0xFFFFFFFF; for(let i = 4; i < 8 + data.length; i++) c = CRC[(c ^ out[i]) & 255] ^ (c >>> 8); dv.setUint32(8 + data.length, (c ^ 0xFFFFFFFF) >>> 0); return out;
+}
+function pngParts(bytes){   // -> { ihdr, idat:[Uint8Array] }
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), r = { ihdr:null, idat:[] };
+  for(let p = 8; p < bytes.length;){ const len = dv.getUint32(p), type = String.fromCharCode(bytes[p + 4], bytes[p + 5], bytes[p + 6], bytes[p + 7]), data = bytes.subarray(p + 8, p + 8 + len);
+    if(type === 'IHDR') r.ihdr = data; else if(type === 'IDAT') r.idat.push(data); p += 12 + len; }
+  return r;
+}
+async function makeApng(o, progress){
+  const keepT = A.t, ts = frameTimes(o.delay), N = ts.length, rep = progress || (()=>{}); cv().discardActiveObject(); await prepMorphs();
+  try{
+    const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])]; let seq = 0, w = 0, h = 0;
+    const u32 = (a, i, v)=> new DataView(a.buffer).setUint32(i, v), u16 = (a, i, v)=> new DataView(a.buffer).setUint16(i, v);
+    for(let fi = 0; fi < N; fi++){
+      const c = renderOne(ts[fi], o), png = pngParts(new Uint8Array(await (await new Promise(r=> c.toBlob(r, 'image/png'))).arrayBuffer()));
+      if(fi === 0){ w = c.width; h = c.height; parts.push(pngChunk('IHDR', png.ihdr)); const ac = new Uint8Array(8); u32(ac, 0, N); u32(ac, 4, o.loops || 0); parts.push(pngChunk('acTL', ac)); }
+      const fc = new Uint8Array(26); u32(fc, 0, seq++); u32(fc, 4, w); u32(fc, 8, h); u32(fc, 12, 0); u32(fc, 16, 0); u16(fc, 20, o.delay || 8); u16(fc, 22, 100); fc[24] = 1; fc[25] = 0;   // dispose to clear, replace pixels
+      parts.push(pngChunk('fcTL', fc));
+      png.idat.forEach(d=>{ if(fi === 0) parts.push(pngChunk('IDAT', d)); else { const fd = new Uint8Array(4 + d.length); u32(fd, 0, seq++); fd.set(d, 4); parts.push(pngChunk('fdAT', fd)); } });
+      rep(fi + 1, N, 'Frame ' + (fi + 1) + ' of ' + N); await pause();
+    }
+    parts.push(pngChunk('IEND', new Uint8Array(0)));
+    return new Blob(parts, { type:'image/png' });
+  } finally { applyAt(keepT); }
+}
+// video: frames are played into a recorder at the real frame rate (MP4 where the browser can, otherwise WebM). Videos have no see-through parts.
+const videoType = ()=> window.MediaRecorder ? ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find(t=> MediaRecorder.isTypeSupported(t)) || '' : '';
+async function makeVideo(o, progress){
+  const type = videoType(); if(!type) throw new Error('This browser cannot record video');
+  const keepT = A.t, ts = frameTimes(o.delay), N = ts.length, rep = progress || (()=>{}), reps = Math.max(1, o.loops || 1); cv().discardActiveObject(); await prepMorphs();
+  try{
+    const first = renderOne(ts[0], o), w = first.width & ~1, h = first.height & ~1, c = document.createElement('canvas'); c.width = w; c.height = h;   // even sizes: H.264 needs them
+    const x = c.getContext('2d'), frames = [];
+    const keep = w * h * 4 * N < 400 * 1048576;   // render every frame up front when it fits in memory, so the timing stays exact
+    if(keep) for(let i = 0; i < N; i++){ frames.push(await createImageBitmap(renderOne(ts[i], o))); rep(i + 1, N * (reps + 1), 'Rendering frame ' + (i + 1) + ' of ' + N); await pause(); }
+    const stream = c.captureStream(0), track = stream.getVideoTracks()[0], chunks = [];
+    const rec = new MediaRecorder(stream, { mimeType:type, videoBitsPerSecond:Math.min(16e6, Math.max(2e6, w * h * 12)) });
+    rec.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(r=> rec.onstop = r); rec.start();
+    const ms = (o.delay || 8) * 10; let t0 = performance.now(), k = 0;
+    for(let r = 0; r < reps; r++) for(let i = 0; i < N; i++, k++){
+      x.fillStyle = o.bg || '#ffffff'; x.fillRect(0, 0, w, h); x.drawImage(keep ? frames[i] : renderOne(ts[i], o), 0, 0, w, h); track.requestFrame();
+      rep((keep ? N : 0) + k + 1, (keep ? N : 0) + N * reps, 'Recording ' + Math.round((k + 1) / (N * reps) * 100) + '%');
+      const wait = t0 + (k + 1) * ms - performance.now(); await new Promise(res=> setTimeout(res, Math.max(0, wait)));
+    }
+    rec.stop(); await stopped; frames.forEach(b=> b.close && b.close());
+    return new Blob(chunks, { type:type.split(';')[0] });
+  } finally { applyAt(keepT); }
+}
+
 /* ---------------- export dialog: three plain choices; the rest tucked under "More options" ---------------- */
 const fmtMB = b=> b / 1024 / 1024 < 1 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
 // a moving preview of the saved GIF - Windows Photos and Explorer only ever show the first frame of a GIF
@@ -8648,7 +8776,10 @@ function openExport(quick){
   saved.width = clamp(+saved.width || def.width, 16, 2000);
   const sizes = [['Small', 240], ['Medium', 480], ['Large', 720], ['Extra large', 1080]].filter(([l, w], i, arr)=> w < d.wPx || (i === 0 || arr[i - 1][1] < d.wPx)).map(([l, w])=> [w >= d.wPx ? 'Full size' : l, Math.min(w, Math.max(16, d.wPx))]);
   const body = document.createElement('div');
-  body.innerHTML = `<div class="r"><label>Size</label><div class="seg grow" id="gxSize">${sizes.map(([l, w])=> `<button data-w="${w}" class="${w === saved.width ? 'active' : ''}">${l}<small>${w}px</small></button>`).join('')}</div></div>
+  const FMTS = [['gif', 'GIF', 'plays anywhere'], ['apng', 'APNG', 'full colour'], ['video', videoType().includes('mp4') ? 'MP4' : 'WebM', 'video']].filter(f=> f[0] !== 'video' || videoType());
+  if(!FMTS.some(f=> f[0] === saved.fmt)) saved.fmt = 'gif';
+  body.innerHTML = `<div class="r"><label>Format</label><div class="seg grow" id="gxFmt">${FMTS.map(([v, l, sub])=> `<button data-fmt="${v}" class="${v === saved.fmt ? 'active' : ''}">${l}<small>${sub}</small></button>`).join('')}</div></div>
+    <div class="r"><label>Size</label><div class="seg grow" id="gxSize">${sizes.map(([l, w])=> `<button data-w="${w}" class="${w === saved.width ? 'active' : ''}">${l}<small>${w}px</small></button>`).join('')}</div></div>
     <div class="r"><label>Background</label><div class="seg grow" id="gxBgSeg">${[['transparent', 'Transparent'], ['#ffffff', 'White'], ['#000000', 'Black']].map(([v, l])=> `<button data-bg="${v}" class="${v === saved.bg ? 'active' : ''}">${l}</button>`).join('')}</div></div>
     <div class="r"><label>Smoothness</label><div class="seg grow" id="gxFpsSeg">${[[10, 'Small file'], [15, 'Normal'], [25, 'Smooth']].map(([f, l])=> `<button data-fps="${f}" class="${f === saved.fps || (f === 15 && ![10, 25].includes(saved.fps)) ? 'active' : ''}">${l}<small>${f} fps</small></button>`).join('')}</div></div>
     <details class="gx-more"><summary>More options</summary>
@@ -8659,23 +8790,26 @@ function openExport(quick){
     <div class="hint" id="gxInfo"></div><div class="gx-bar"><i id="gxProg"></i></div>`;
   const g = id=> $('#' + id, body);
   const get = ()=>{ const on = (sel, at)=> { const b = $(sel + '.active', body); return b ? b.dataset[at] : null; };
-    return { width:clamp(+g('gxW').value || 480, 16, 2000), fps:+(on('#gxFpsSeg button', 'fps') || 15), colors:+g('gxCol').value, dither:g('gxDith').checked, loops:+g('gxLoops').value, bg:on('#gxBgSeg button', 'bg') || 'transparent' }; };
+    return { fmt:on('#gxFmt button', 'fmt') || 'gif', width:clamp(+g('gxW').value || 480, 16, 2000), fps:+(on('#gxFpsSeg button', 'fps') || 15), colors:+g('gxCol').value, dither:g('gxDith').checked, loops:+g('gxLoops').value, bg:on('#gxBgSeg button', 'bg') || 'transparent' }; };
   let working = false;
-  const api = MS.modal({ title:'Save animated GIF', body, med:true, sticky:true, buttons:[{ spacer:true, id:'gxMsg' }, { label:'Cancel' }, { label:'Save GIF', primary:true, icon:'export', keepOpen:true, id:'gxGo', action:async (m, btn)=>{
+  const api = MS.modal({ title:'Save animation', body, med:true, sticky:true, buttons:[{ spacer:true, id:'gxMsg' }, { label:'Cancel' }, { label:'Save', primary:true, icon:'export', keepOpen:true, id:'gxGo', action:async (m, btn)=>{
     if(working) return false; working = true;
     const opt = get(); MS.store.set('gifopt', opt); btn.disabled = true; opt.delay = Math.max(2, Math.round(100 / opt.fps)); $$('button,input,select', body).forEach(e=> e.disabled = true);
     const msgEl = $('#gxMsg'), done = ()=>{ working = false; btn.disabled = false; $$('button,input,select', body).forEach(e=> e.disabled = false); };
     try{
       if(A.loop && !A.pingpong && loopStatus().bad){ makeLoop(); renderRows(); }       // so the GIF repeats with no jump
-      const blob = await makeGif({ width:opt.width, delay:opt.delay, bg:opt.bg === 'transparent' ? null : opt.bg, colors:opt.colors, dither:opt.dither, loops:opt.loops }, (i, n, label)=>{ g('gxProg').style.width = (i / n * 96) + '%'; msgEl.textContent = label; });
+      const go = { width:opt.width, delay:opt.delay, bg:opt.bg === 'transparent' ? null : opt.bg, colors:opt.colors, dither:opt.dither, loops:opt.loops }, prog = (i, n, label)=>{ g('gxProg').style.width = (i / n * 96) + '%'; msgEl.textContent = label; };
+      const blob = opt.fmt === 'apng' ? await makeApng(go, prog) : opt.fmt === 'video' ? await makeVideo(go, prog) : await makeGif(go, prog);
       g('gxProg').style.width = '100%'; msgEl.textContent = 'Saving…';
-      const name = (S.doc.name || 'animation').replace(/[\\/:*?"<>|]+/g, '_') + '.gif', msg = await MS.saveFile(blob, name);
-      toast('GIF ' + msg + ' (' + fmtMB(blob.size) + ')', 8000); api.close(); showGif(blob, name, msg);
-    }catch(e){ console.error(e); toast('Could not make the GIF: ' + (e && e.message || e) + ' — try the Small size.', 8000, 'err'); msgEl.textContent = ''; g('gxProg').style.width = '0'; done(); }
+      const ext = opt.fmt === 'apng' ? '.png' : opt.fmt === 'video' ? (blob.type.includes('mp4') ? '.mp4' : '.webm') : '.gif', label = opt.fmt === 'apng' ? 'Animated PNG' : opt.fmt === 'video' ? 'Video' : 'GIF';
+      const name = (S.doc.name || 'animation').replace(/[\\/:*?"<>|]+/g, '_') + ext, msg = await MS.saveFile(blob, name);
+      toast(label + ' ' + msg + ' (' + fmtMB(blob.size) + ')', 8000); api.close(); if(opt.fmt !== 'video') showGif(blob, name, msg);
+    }catch(e){ console.error(e); toast('Could not make the animation: ' + (e && e.message || e) + ' — try the Small size.', 8000, 'err'); msgEl.textContent = ''; g('gxProg').style.width = '0'; done(); }
     return false;
   } }] });
   const upd = ()=>{ const o = get(), h = Math.round(o.width * d.hPx / d.wPx), n = frameTimes(Math.max(2, Math.round(100 / o.fps))).length, est = o.width * h * n * .1 / 1048576;
-    g('gxH').textContent = '× ' + h + ' px'; g('gxInfo').textContent = n + ' frames · ' + A.dur + ' s' + (A.pingpong ? ' (back and forth)' : '') + ' · about ' + (est < .1 ? 'under 0.1' : est.toFixed(1)) + ' MB'; };
+    g('gxH').textContent = '× ' + h + ' px'; g('gxInfo').textContent = n + ' frames · ' + A.dur + ' s' + (A.pingpong ? ' (back and forth)' : '') + (o.fmt === 'gif' ? ' · about ' + (est < .1 ? 'under 0.1' : est.toFixed(1)) + ' MB' : o.fmt === 'video' ? ' · recorded in real time' + (o.bg === 'transparent' ? ' on white (videos cannot be see-through)' : '') : '');
+    g('gxCol').closest('.r').style.display = o.fmt === 'gif' ? '' : 'none'; $('#gxLoops', body).closest('.r').querySelector('label').textContent = o.fmt === 'video' ? 'Repeats' : 'Plays'; };
   $$('.seg', body).forEach(sg=> sg.addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; $$('button', sg).forEach(x=> x.classList.toggle('active', x === b)); if(b.dataset.w) g('gxW').value = b.dataset.w; upd(); }));
   g('gxW').addEventListener('input', ()=>{ $$('#gxSize button', body).forEach(b=> b.classList.toggle('active', +b.dataset.w === +g('gxW').value)); upd(); });
   $$('select,input', body).forEach(e=> e.addEventListener('input', upd)); upd();
@@ -8697,7 +8831,7 @@ function build(){
     <div class="an-main"><div class="an-rows" id="anRows"></div></div>
     <div class="an-foot"><div class="an-tr"><button class="btn sm primary an-play">${MS.icon('play')}<span>Play</span></button><button class="btn sm an-start">${MS.icon('rotate')}Start</button><span class="an-time">0.00 / 2.00 s</span></div><label class="chk" data-tip="Click an effect bar and it plays on repeat so you can watch it while you tune it"><input type="checkbox" id="anLoopSel" checked> Loop the selected effect</label><span class="an-badge"></span></div>`;
   $('#center').insertBefore(bar, $('#statusbar'));
-  const tab = document.createElement('button'); tab.className = 'dock-tab'; tab.dataset.page = 'anim'; tab.innerHTML = MS.icon('play') + 'Animate'; tab.addEventListener('click', ()=> MS.showPage('anim'));
+  const tab = document.createElement('button'); tab.className = 'dock-tab'; tab.dataset.page = 'anim'; tab.title = 'Animate'; tab.innerHTML = MS.icon('play') + 'Animate'; tab.addEventListener('click', ()=> MS.showPage('anim'));
   $('#tabsTop').insertBefore(tab, $('#tabsTop .dock-tab[data-page="claude"]'));
   const pg = document.createElement('div'); pg.className = 'dock-page hidden'; pg.id = 'page-anim';
   pg.innerHTML = `<div class="sect"><div class="sect-b" style="padding-top:12px">
@@ -9025,23 +9159,21 @@ function aiApply(a){
 }
 function aiFinish(play0){ A.sel = null; applyAt(0); renderRows(); if(play0 && Object.keys(A.tracks).length) setTimeout(()=>{ stop(); play(); }, 60); }
 
-MS.anim = { aiDescribe, aiApply, aiFinish, collapse, runPreview, state:A, snapshot, removeTrack, removeFx, toggle, applyAt, addEffect, addKey, makeLoop, play, stop, openExport, renderFrames, makeGif, frameTimes, loopStatus, FX:FXLIST, EASE };
+MS.anim = { makeApng, makeVideo, aiDescribe, aiApply, aiFinish, collapse, runPreview, state:A, snapshot, removeTrack, removeFx, toggle, applyAt, addEffect, addKey, makeLoop, play, stop, openExport, renderFrames, makeGif, frameTimes, loopStatus, FX:FXLIST, EASE };
 MS.initAnim = function(){
   build(); wireRows(); MS.on('selection', ()=>{ if(A.on) renderRows(); }); MS.on('layers', ()=>{ if(A.on) renderRows(); });
   window.addEventListener('resize', ()=>{ if(A.on) renderRows(); });
   const sb = document.createElement('span'); sb.className = 'sb-toggle'; sb.id = 'sbAnim'; sb.dataset.tip = 'Animation timeline — make GIFs'; sb.innerHTML = MS.icon('play') + 'Animate'; sb.onclick = ()=> A.on ? collapse() : toggle(true); $('#statusbar').insertBefore(sb, $('#sbSnap'));
   MS.addCommand && MS.addCommand({ title:'Animation timeline', cat:'Window', run:()=> toggle() });
   MS.addCommand && MS.addCommand({ title:'Add keyframe at playhead', cat:'Window', run:()=> keyHere() });
-  MS.addCommand && MS.addCommand({ title:'Export animated GIF', cat:'File', run:()=>{ if(!A.on) toggle(true); openExport(); } });
+  MS.addCommand && MS.addCommand({ title:'Export animation (GIF, APNG, video)', cat:'File', run:()=>{ if(!A.on) toggle(true); openExport(); } });
   document.addEventListener('keydown', e=>{ if((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'a'){ e.preventDefault(); A.on ? collapse() : toggle(true); } if(A.on && e.code === 'Space' && !e.repeat && !/input|textarea|select|button/i.test((e.target.tagName || ''))){ e.preventDefault(); spTap = { t:Date.now(), used:false }; } else if(spTap && e.code !== 'Space') spTap.used = true; }, true);
   // Space: a quick tap plays / pauses; holding it still pans (Space+drag) and Space+P still previews
   let spTap = null;
   document.addEventListener('pointerdown', ()=>{ if(spTap) spTap.used = true; }, true);
   document.addEventListener('keyup', e=>{ if(e.code !== 'Space' || !spTap) return; const tap = !spTap.used && Date.now() - spTap.t < 300; spTap = null; if(tap && A.on) A.playing ? stop() : play(); }, true);
-  const pc = MS.collectExtra, pr = MS.restoreExtra;
-  MS.collectExtra = ()=> Object.assign(pc ? pc() : {}, { anim:{ dur:A.dur, fps:A.fps, loop:A.loop, pingpong:A.pingpong, autokey:A.autokey, tracks:A.tracks } });
-  MS.restoreExtra = ex=>{ const a = ex && ex.anim; A.tracks = (a && a.tracks) || {}; if(a){ A.dur = a.dur || 2; A.fps = a.fps || 12; A.loop = a.loop !== false; A.pingpong = !!a.pingpong; A.autokey = a.autokey !== false; } A.t = 0; A.sel = null; pr && pr(ex); if(bar){ $('#anDur').value = A.dur; $('#anFps').value = A.fps; $('#anLoop').checked = A.loop; $('#anPing').checked = A.pingpong; $('#anAuto').checked = A.autokey; } setTimeout(()=>{ if(Object.keys(A.tracks).length && !A.on) toggle(true); else A.on && renderRows(); if(Object.keys(A.tracks).length) applyAt(0); }, 80); };
-  const nd = MS.newDoc; MS.newDoc = function(){ stop(); A.tracks = {}; A.t = 0; A.sel = null; const r = nd.apply(this, arguments); if(A.on) renderRows(); return r; };
+  MS.registerExtra('anim', ()=> ({ anim:{ dur:A.dur, fps:A.fps, loop:A.loop, pingpong:A.pingpong, autokey:A.autokey, tracks:A.tracks } }), ex=>{ const a = ex && ex.anim; A.tracks = (a && a.tracks) || {}; if(a){ A.dur = a.dur || 2; A.fps = a.fps || 12; A.loop = a.loop !== false; A.pingpong = !!a.pingpong; A.autokey = a.autokey !== false; } A.t = 0; A.sel = null; if(bar){ $('#anDur').value = A.dur; $('#anFps').value = A.fps; $('#anLoop').checked = A.loop; $('#anPing').checked = A.pingpong; $('#anAuto').checked = A.autokey; } setTimeout(()=>{ if(Object.keys(A.tracks).length && !A.on) toggle(true); else A.on && renderRows(); if(Object.keys(A.tracks).length) applyAt(0); }, 80); });
+  MS.onNewDoc(()=>{ stop(); A.tracks = {}; A.t = 0; A.sel = null; setTimeout(()=>{ if(A.on) renderRows(); }, 0); });
 };
 })();
 
@@ -9707,6 +9839,7 @@ function menus(){
   const chk = k=> ()=> !!MS.prefs[k];
   return [
     { label:'File', items:[
+      { label:'Fonts used in this design…', action:()=> MS.showFontsUsed() },
       { label:'New design…', icon:'newdoc', key:(matchMedia('(display-mode: standalone)').matches ? 'Ctrl+N' : 'Alt+N'), action:()=> MS.openNewDialog() },
       { label:'Open project…', icon:'open', key:'Ctrl+O', action:()=> $('#projectLoadInput').click() },
       { label:'Open from saved files…', icon:'folder', key:'Ctrl+Shift+O', action:()=> MS.openFiles() },
@@ -9870,6 +10003,10 @@ function wireKeys(){
 /* ============================ TITLE PAGE ============================ */
 // Drop your own artwork in the "title" folder, named title-page.png / .jpg / .webp / .svg / .gif, and it is shown full-screen at start.
 function probeTitle(){
+  // title/title.json names the art: serve.ps1 answers it live from the folder, and the build writes it into the published copy
+  return fetch('title/title.json', { cache:'no-store' }).then(r=> r.ok ? r.json() : null).then(j=> j && j.art ? 'title/' + j.art : null).catch(()=> null);
+}
+function probeTitleFiles(){   // not used any more: tried every name and logged a 404 for each missing one
   const names = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'].map(e=> 'title/title-page.' + e);
   return Promise.all(names.map(src=> new Promise(res=>{ const im = new Image(); im.onload = ()=> res(src); im.onerror = ()=> res(null); im.src = src; }))).then(r=> r.find(Boolean) || null);   // all at once: one round trip, not six
 }
@@ -9913,6 +10050,16 @@ async function showSplash(artP){
     document.addEventListener('keydown', key, true); ov.addEventListener('click', go);
   });
 }
+
+// File > Fonts used: every font on the artboard (inside groups too), for print hand-offs and licences
+MS.showFontsUsed = function(){
+  const used = new Map(), walk = o=>{ if(o._objects) o._objects.forEach(walk); if(MS.isTextObj(o)){ const f = String(o.fontFamily || '').replace(/["']/g, ''); if(f) used.set(f, (used.get(f) || 0) + 1); } };
+  MS.canvas.getObjects().forEach(walk);
+  const list = [...used.entries()].sort((a, b)=> a[0].localeCompare(b[0])), body = document.createElement('div');
+  body.innerHTML = list.length ? `<div class="hint">${list.length} font${list.length > 1 ? 's' : ''}. Send these with print files, and check each font's licence before selling merch.</div><ul style="margin:8px 0 0;padding-left:18px">${list.map(([f, n])=> `<li><b style="font-family:'${MS.esc(f)}'">${MS.esc(f)}</b> <span class="hint">· ${n} text layer${n > 1 ? 's' : ''}</span></li>`).join('')}</ul>` : '<div class="hint">No text in this design yet.</div>';
+  MS.modal({ title:'Fonts used in this design', body, buttons:[{ spacer:true }].concat(list.length ? [{ label:'Copy list', keepOpen:true, action:()=>{ navigator.clipboard && navigator.clipboard.writeText(list.map(([f])=> f).join('\n')).then(()=> toast('Font list copied.')); return false; } }] : []).concat([{ label:'Done', primary:true }]) });
+};
+MS.addCommand && setTimeout(()=> MS.addCommand({ title:'Fonts used in this design', cat:'File', run:()=> MS.showFontsUsed() }), 0);
 
 /* ============================ STARTUP ============================ */
 document.addEventListener('DOMContentLoaded', async ()=>{

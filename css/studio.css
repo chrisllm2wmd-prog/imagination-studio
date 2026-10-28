@@ -108,7 +108,7 @@ body.no-rulers #vpWrap{--ruler:0px;} body.no-rulers #rulerTop,body.no-rulers #ru
 #dock{width:var(--dockW);flex:none;display:flex;flex-direction:column;background:var(--bg1);border-left:1px solid var(--line);position:relative;}
 #dockResize{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:10;} #dockResize:hover,#dockResize.drag{background:var(--accln);}
 .dock-group{display:flex;flex-direction:column;min-height:90px;overflow:hidden;}
-#dockTop{flex:1 1 55%;} #dockBottom{flex:1 1 45%;border-top:1px solid var(--line);}
+#dockTop{flex:1 1 64%;} #dockBottom{flex:1 1 36%;border-top:1px solid var(--line);}
 .splitter{height:5px;flex:none;background:var(--bg0);cursor:row-resize;position:relative;} .splitter:hover,.splitter.drag{background:var(--accln);}
 .dock-tabs{display:flex;flex:none;background:var(--bg0);border-bottom:1px solid var(--line);overflow-x:auto;}
 .dock-tabs::-webkit-scrollbar{height:0;}
@@ -304,6 +304,15 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 #claudeLog{display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow-y:auto;}
 #mkStage{background:radial-gradient(circle at 50% 30%,#2a2d34,#15161a);border:1px solid var(--line2);border-radius:10px;overflow:hidden;position:relative;}
 #mkCanvas{width:100%;display:block;}
+#canvasRow{flex:1;min-height:0;display:flex;} #canvasRow>#vpWrap{flex:1;min-width:0;}
+#mkHero{position:relative;flex:none;display:flex;flex-direction:column;min-width:260px;max-width:45%;background:radial-gradient(circle at 50% 30%,#22252c,#121317);border-left:1px solid var(--line);}
+#mkHero[hidden]{display:none;}
+#mkHero .mkh-grip{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:ew-resize;z-index:2;} #mkHero .mkh-grip:hover{background:var(--accln);}
+#mkHero .mkh-bar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--bg1);} #mkHero .mkh-bar select{max-width:150px;} #mkHero .mkh-bar .sp{flex:1;}
+#mkHero .mkh-stage{flex:1;min-height:0;display:grid;place-items:center;padding:12px;}
+#mkHero canvas{max-width:100%;max-height:100%;width:auto;height:auto;aspect-ratio:1000/1100;display:block;}
+#mkHero .mkh-note{padding:6px 12px 10px;color:var(--mut);font-size:11.5px;text-align:center;}
+#mkHeroToggle.active{border-color:var(--acc);background:var(--accbg);}
 
 /* canvas context hints */
 .opt-pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;background:var(--bg3);border:1px solid var(--line2);border-radius:12px;font-size:11.5px;}
@@ -414,7 +423,7 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 .home-tipson{margin-top:auto;background:none;border:0;color:var(--mut);font-size:11.5px;cursor:pointer;text-align:left;padding:6px 12px;} .home-tipson:hover{color:var(--acc2);}
 .home-main{overflow-y:auto;}
 .home-cats{margin:22px 0 0;} .home-cats + .home-cats{margin-top:12px;}
-.home-fmts.pop .home-cat{animation:homeIn .28s ease both;} .home-fmts.pop .home-cat:nth-child(2){animation-delay:.03s;} .home-fmts.pop .home-cat:nth-child(3){animation-delay:.06s;} .home-fmts.pop .home-cat:nth-child(4){animation-delay:.09s;} .home-fmts.pop .home-cat:nth-child(5){animation-delay:.12s;}
+.home-fmts.pop .home-cat{animation:homeInFmt .22s ease both;} .home-fmts.pop .home-cat:nth-child(2){animation-delay:.03s;} .home-fmts.pop .home-cat:nth-child(3){animation-delay:.06s;} .home-fmts.pop .home-cat:nth-child(4){animation-delay:.09s;} .home-fmts.pop .home-cat:nth-child(5){animation-delay:.12s;}
 .home-fmt{padding:10px 14px;gap:3px;} .home-fmt em{font-style:normal;color:var(--acc2);font-size:11.5px;font-variant-numeric:tabular-nums;}
 .fmt-shape{display:block;background:linear-gradient(135deg,#3a4160,#262a3f);border:1px solid rgba(255,255,255,.2);border-radius:2px;margin:0 0 4px;}
 .home-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px;} .hf-opts{flex-wrap:wrap;} .hf-step{color:var(--mut);font-size:13px;text-align:center;padding:4px 0;}
@@ -489,7 +498,8 @@ kbd{font:10.5px var(--mono);background:var(--bg0);border:1px solid var(--line2);
 /* ---------- Animate tab: nothing may clip on the right ---------- */
 #dock{max-width:62vw;min-width:0;} #page-anim,#page-anim .sect-b{min-width:0;max-width:100%;} #page-anim .r{flex-wrap:wrap;min-width:0;} #page-anim .r > input[type=range]{flex:1 1 90px;min-width:70px;} #page-anim select{min-width:0;max-width:100%;} #page-anim .btn{white-space:normal;max-width:100%;}
 #page-anim .an-chips .chip{flex:none;} #page-anim .an-tr{flex-wrap:wrap;} #page-anim .an-badge{display:inline-block;align-self:flex-start;} #page-anim .an-badge:empty{display:none;}
-#tabsTop{flex-wrap:wrap;overflow-x:visible;} #animBar .an-top .hint{flex:1;min-width:120px;}
+#tabsTop{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;} #dockTop{container-type:inline-size;}
+@container (max-width:480px){ #tabsTop .dock-tab:not(.active){font-size:0;gap:0;padding:8px 10px;} }   /* narrow dock: one row, other tabs show just their icon (name on hover) */ #animBar .an-top .hint{flex:1;min-width:120px;}
 #animBar{height:clamp(150px,26vh,240px);}
 /* ---------- Help centre + guided tours ---------- */
 .hc{display:flex;gap:16px;min-height:380px;max-height:68vh;} .hc-side{width:210px;flex:none;display:flex;flex-direction:column;gap:6px;overflow-y:auto;} .hc-side input{width:100%;}
@@ -630,3 +640,14 @@ body.anim-on #anSnapBtn{display:flex;align-items:center;justify-content:center;}
 .cornerpick button{width:26px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;background:var(--bg0);border:1px solid var(--line2);border-radius:5px;color:var(--dim);cursor:pointer;}
 .cornerpick button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;}
 .cornerpick button:hover{color:var(--txt);} .cornerpick button.on{color:#fff;background:var(--acc);border-color:var(--acc);}
+
+/* Ad Studio steps */
+.ad-steps{display:flex;gap:4px;padding:10px 10px 4px;}
+.ad-steps button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:6px 4px;border:1px solid var(--line2);border-radius:8px;background:var(--bg2);color:var(--mut);font-size:11px;font-weight:600;cursor:pointer;min-width:0;}
+.ad-steps button b{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--bg0);font-size:10px;flex:none;}
+.ad-steps button.active{border-color:var(--acc);background:var(--accbg);color:var(--txt);} .ad-steps button.active b{background:var(--acc);color:#fff;}
+.ad-next{align-self:flex-end;margin-top:8px;}
+
+/* size tiles never start fully invisible, so the row is never an empty gap */
+@keyframes homeInFmt{from{opacity:.45;transform:translateY(5px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){ .home-fmts.pop .home-cat{animation:none;} }

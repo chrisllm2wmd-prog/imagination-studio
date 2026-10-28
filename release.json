@@ -1,13 +1,12 @@
 {
-  "version": "4.22 beta",
+  "version": "4.23 beta",
   "date": "2026-10-28",
   "notes": [
-    "Export is always visible on laptop screens: the top bar now fits 1280 and 1366 px wide.",
-    "Undo and redo now cover animation, ad settings and linked groups too.",
-    "Safer work: a new design no longer wipes your crash-recovery copy, and closing the tab with unsaved changes asks first.",
-    "In the timeline, tap Space to play or pause; hold Space to pan as usual.",
-    "Every effect is now in the Effects menu, and the Design panel opens the right section for what you select.",
-    "New Help topics: Merch, Ads, Build for, Pen and node edit, Textures, Live symmetry, Assets and What's new.",
-    "Blank canvas now starts at a safe 4096 px (Maximum is still there)."
+    "Merch workspace: a big live mockup now sits beside the canvas while you design. Drag its edge to resize, or hide it.",
+    "Animations can now be saved as GIF, full-colour animated PNG, or video (MP4 / WebM) for social posts.",
+    "Ad Studio walks you through Theme, Campaign, Voice and Style as numbered steps with Next buttons.",
+    "The right-hand tabs stay on one row, and Layers takes less room by default.",
+    "File > Fonts used in this design lists every font, ready to copy for print hand-offs.",
+    "Library shapes now match drawn shapes exactly."
   ]
 }
