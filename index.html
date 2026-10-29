@@ -11,12 +11,12 @@
 <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <link rel="stylesheet" href="css/studio.css">
-<script src="app.js?v=4.25.1-beta" defer></script>
+<script src="app.js?v=4.26-beta" defer></script>
 </head>
 <body data-ws="logo">
 
 <!-- title screen, in the page itself so it is on screen from the very first paint (boot.js reuses it: no flash of the bare editor while scripts load) -->
-<div id="splash"><div class="sp-default"><div class="sp-mark"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 9-8 9-8-9zM12 8l4 4-4 4-4-4z"/></svg></div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div><div class="sp-load"><i></i></div></div>
+<div id="splash"><div class="sp-default"><img class="sp-logo" src="assets/logo-full.png" alt="Imagination Studio" draggable="false"><p>Logos · Ads · Merch — one creative workspace</p></div><div class="sp-load"><i></i></div></div>
 
 <input type="file" id="fileImportInput" accept="image/*,.svg" multiple hidden>
 <input type="file" id="bgImageInput" accept="image/*" hidden>
@@ -26,7 +26,7 @@
 
   <!-- ===================== MENU BAR ===================== -->
   <header id="menubar">
-    <div class="brand"><i data-i="logo"></i><span>Imagination Studio</span></div>
+    <div class="brand"><img class="ic" src="assets/logo-mark.png" alt="" draggable="false"><span>Imagination Studio</span></div>
     <nav id="menus"></nav>
     <div id="wsSwitch" title="Workspace">
       <button data-ws="logo"><i data-i="logo"></i>Logo</button>

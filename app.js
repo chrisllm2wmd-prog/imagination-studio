@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.25.1 beta';
+window.IMAGINATION_VERSION = '4.26 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -26987,7 +26987,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       const step = 'Now choose a size';
       ov.innerHTML = `
       <div class="home-side">
-        <div class="home-brand">${MS.icon('logo')}<div><b>Imagination Studio</b><span>Create. Design. Print.  ·  v${window.IMAGINATION_VERSION || ''}</span></div></div>
+        <div class="home-brand"><img class="ic" src="assets/logo-mark.png" alt="" draggable="false"><div><b>Imagination Studio</b><span>Create. Design. Print.  ·  v${window.IMAGINATION_VERSION || ''}</span></div></div>
         <button class="home-new active" id="hmNew">${MS.icon('newdoc')}<span>New design</span></button>
         <button class="home-new" id="hmOpen">${MS.icon('open')}<span>Open project…</span></button>
         ${hasSaved ? `<button class="home-new" id="hmRestore">${MS.icon('history')}<span>Continue last session<small>${MS.esc(saved.payload.meta.name || 'Untitled')} · ${new Date(saved.savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></span></button>` : ''}
@@ -27548,7 +27548,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       footer: false,
       body:
         '<div style="text-align:center;padding:10px 0 4px"><div style="color:var(--acc)">' +
-        MS.icon('logo').replace('class="ic"', 'class="ic" style="width:64px;height:64px"') +
+        '<img src="assets/logo-mark.png" alt="" style="width:84px;height:84px" draggable="false">' +
         '</div><h2 style="margin:10px 0 2px;font-size:22px">Imagination Studio</h2><div class="hint" style="font-size:13px">Logos · Ads · Merch — one creative workspace</div><div style="margin:14px auto 0;max-width:340px;font-size:13px;line-height:1.55">Built because making your own merch shouldn’t mean ten browser tabs, sketchy downloads and a spam-filled inbox. One honest place to design it all.</div><div style="margin-top:10px"><button class="btn sm" id="aboutStory">Read the full story</button></div><div class="about-links"><a href="mailto:chris.llm2wmd@gmail.com?subject=Imagination%20Studio%20feedback">Contact me</a> · <a href="https://www.llm2wmd.com" target="_blank" rel="noopener noreferrer">llm2wmd.com</a> · <a href="https://www.llm2wmd.com/#shop" target="_blank" rel="noopener noreferrer">Merch store</a></div><div style="margin-top:18px;font-size:13px">Created by <b>Chris Chapman</b></div><div class="hint" style="font-size:13px">Powered by your Imagination</div><div class="hint" style="margin-top:14px">Version ' +
         (window.IMAGINATION_VERSION || '') +
         '</div></div>',
@@ -27895,9 +27895,8 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       ov = document.createElement('div');
       ov.id = 'splash';
       ov.innerHTML =
-        '<div class="sp-default"><div class="sp-mark">' +
-        MS.icon('logo') +
-        '</div><h1>Imagination Studio</h1><p>Logos · Ads · Merch — one creative workspace</p></div>';
+        '<div class="sp-default">' +
+        '<img class="sp-logo" src="assets/logo-full.png" alt="Imagination Studio" draggable="false"><p>Logos · Ads · Merch — one creative workspace</p></div>';
       document.body.appendChild(ov);
     }
     if (skip) {
