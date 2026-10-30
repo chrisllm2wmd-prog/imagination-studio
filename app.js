@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.26 beta';
+window.IMAGINATION_VERSION = '4.27 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -20579,6 +20579,695 @@ document.addEventListener('DOMContentLoaded', () => {
 })();
 
 ;
+/* js/consult.js */
+/* Imagination Studio - Client consultation.
+   One consultation per customer: their details, the project outline and requirements, and rounds of design ideas.
+   "Build customer file" turns the current round into ONE self-contained .html (personal slideshow, then the feedback form)
+   that is emailed to the customer. Their reply comes back as a small .msfeedback.json that is imported here, so each round
+   builds on the last. Saved in MERCH\customer\<name>\consult.json when the local server is running (otherwise downloaded). */
+(function () {
+  'use strict';
+  const MS = window.MS,
+    S = MS.S;
+  const { $, $$, esc, toast } = MS;
+  const H = { 'X-Merch-Studio': '1' };
+  const isLocal = () => /^https?:$/.test(location.protocol) && ['localhost', '127.0.0.1'].includes(location.hostname);
+  const CHOICE = { love: 'Love it', no: 'Not for me', more: 'See more like this' };
+  const slug = s =>
+    String(s || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  const fileSafe = s => String(s || '').replace(/[^\w .-]+/g, '').replace(/\s+/g, ' ').trim();
+  const longDate = d => new Date(d || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const CS = (MS.consult = {});
+  let C = null, // the open consultation
+    api = null,
+    dirty = false;
+
+  /* ---------------- data ---------------- */
+  function blank() {
+    const me = MS.store.get('consultDesigner', {}) || {};
+    return {
+      type: 'imagination-consult',
+      v: 1,
+      id: newId('c'),
+      customer: { name: '', email: '' },
+      studio: { name: me.studio || 'Imagination Studio', designer: me.designer || '', email: me.email || '', whatsapp: me.whatsapp || '', logo: me.logo || '' },
+      project: { name: S.doc && S.doc.name && !/^untitled/i.test(S.doc.name) ? S.doc.name : '', outline: '', requirements: [] },
+      theme: { accent: '#ff7a2b', primary: '#5a63ff' },
+      rounds: [{ n: 1, date: Date.now(), message: '', ideas: [], response: null }],
+    };
+  }
+  const round = () => C.rounds[C.rounds.length - 1];
+  const rememberMe = () =>
+    MS.store.set('consultDesigner', { studio: C.studio.name, designer: C.studio.designer, email: C.studio.email, whatsapp: C.studio.whatsapp, logo: C.studio.logo });
+  const waDigits = s => String(s || '').replace(/\D+/g, '');
+
+  /* pictures are shrunk so the customer's file stays email sized */
+  function shrinkImage(src, max, q) {
+    return new Promise((res, rej) => {
+      const im = new Image();
+      im.onerror = () => rej(new Error('That picture could not be read.'));
+      im.onload = () => {
+        const s = Math.min(1, max / Math.max(im.width, im.height)),
+          c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(im.width * s));
+        c.height = Math.max(1, Math.round(im.height * s));
+        const x = c.getContext('2d');
+        x.fillStyle = '#fff';
+        x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(im, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', q));
+      };
+      im.src = src;
+    });
+  }
+  const fileToURL = f =>
+    new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onerror = () => rej(new Error('read'));
+      r.onload = () => res(r.result);
+      r.readAsDataURL(f);
+    });
+
+  /* ---------------- saving / opening ---------------- */
+  async function putCustomer(blob, name, overwrite) {
+    if (isLocal() && C.customer.name) {
+      try {
+        const r = await fetch(
+          'save?dir=customer&sub=' + encodeURIComponent(slug(C.customer.name) || 'customer') + '&name=' + encodeURIComponent(name) + (overwrite ? '&overwrite=1' : ''),
+          { method: 'POST', headers: H, body: blob }
+        );
+        if (r.ok) {
+          const j = await r.json();
+          return 'MERCH\\' + j.dir.replace('/', '\\') + '\\' + j.name;
+        }
+      } catch (e) {}
+    }
+    MS.download(blob, name);
+    return 'your Downloads folder as ' + name;
+  }
+  async function saveConsult(quiet) {
+    if (!C.customer.name.trim()) {
+      toast('Add the customer name first.', 3000, 'err');
+      return false;
+    }
+    rememberMe();
+    const where = await putCustomer(new Blob([JSON.stringify(C)], { type: 'application/json' }), 'consult.json', true);
+    dirty = false;
+    quiet || toast('Consultation saved to ' + where, 4200);
+    return true;
+  }
+  async function listSaved() {
+    if (!isLocal()) return [];
+    try {
+      const j = await (await fetch('customers', { headers: H })).json();
+      return (j.customers || [])
+        .filter(c => c.files.some(f => f.name === 'consult.json'))
+        .map(c => ({ sub: c.sub, modified: Date.parse(c.files.find(f => f.name === 'consult.json').modified) }));
+    } catch (e) {
+      return [];
+    }
+  }
+  function adopt(j) {
+    if (!j || j.type !== 'imagination-consult' || !Array.isArray(j.rounds) || !j.rounds.length) throw new Error('That is not a consultation file.');
+    C = j;
+    dirty = false;
+    C.customer = C.customer || { name: '', email: '' };
+    C.project = C.project || { name: '', outline: '', requirements: [] };
+    C.studio = C.studio || { name: 'Imagination Studio', designer: '', email: '', logo: '' };
+    C.theme = C.theme || { accent: '#ff7a2b', primary: '#5a63ff' };
+  }
+  async function openSaved(sub) {
+    const j = await (await fetch('customer-file?sub=' + encodeURIComponent(sub) + '&name=consult.json', { headers: H })).json();
+    adopt(j);
+  }
+
+  /* ---------------- building the customer's file ---------------- */
+  // links point at one shared copy of the tune and the animated logo in the consultations repo; standalone files carry them inside
+  async function assetFor(forLink, shared, file) {
+    if (forLink) return '../../' + shared;
+    try {
+      return await fileToURL(await (await fetch('assets/' + file)).blob());
+    } catch (e) {
+      return '';
+    }
+  }
+  async function buildHtml(forLink) {
+    const r = round(),
+      tpl = await (await fetch('assets/consult-pack.html', { cache: 'no-cache' })).text();
+    const data = {
+      v: 1,
+      id: C.id,
+      round: r.n,
+      date: longDate(),
+      studio: { name: C.studio.name, logo: C.studio.logo, email: C.studio.email, whatsapp: waDigits(C.studio.whatsapp), designer: C.studio.designer },
+      customer: C.customer,
+      project: C.project,
+      message: r.message || '',
+      theme: C.theme,
+      music: await assetFor(forLink, 'music.mp3', 'consult-music.mp3'),
+      logoVideo: await assetFor(forLink, 'logo.mp4', 'consult-logo.mp4'),
+      ideas: r.ideas.map((i, k) => ({ id: i.id, title: 'Inspiration No ' + (k + 1), note: i.note, img: i.img, from: i.from || '', prev: i.prev || '' })),
+    };
+    const bs = String.fromCharCode(92); // JSON-safe escapes so the data can sit inside a <script> tag
+    const json = JSON.stringify(data)
+      .replace(/</g, bs + 'u003c')
+      .replace(new RegExp('[' + String.fromCharCode(8232, 8233) + ']', 'g'), c => bs + 'u' + c.charCodeAt(0).toString(16));
+    const re = /(<script id="pack-data" type="application\/json">)[\s\S]*?(<\/script>)/;
+    if (!re.test(tpl)) throw new Error('The customer file template is damaged.');
+    return tpl.replace(re, (m, a, b) => a + json + b);
+  }
+  function checkReady() {
+    const miss = [];
+    if (!C.customer.name.trim()) miss.push('the customer name');
+    if (!C.project.name.trim()) miss.push('the project name');
+    if (!/^\S+@\S+\.\S+$/.test(C.studio.email.trim()) && waDigits(C.studio.whatsapp).length < 8) miss.push('your WhatsApp number or email address (where their reply goes)');
+    if (!round().ideas.length) miss.push('at least one idea picture');
+    return miss;
+  }
+  const packName = () => fileSafe(C.project.name || 'Project') + ' - round ' + round().n + '.html';
+  async function build(thenEmail) {
+    const miss = checkReady();
+    if (miss.length) {
+      toast('Still needed: ' + miss.join(', ') + '.', 5200, 'err');
+      return;
+    }
+    try {
+      const html = await buildHtml();
+      const blob = new Blob([html], { type: 'text/html' });
+      await saveConsult(true);
+      const where = await putCustomer(blob, packName(), true);
+      toast('Customer file ready (' + MS.fmtBytes(blob.size) + ') in ' + where, 6000);
+      if (thenEmail) emailIt(blob);
+      return blob;
+    } catch (e) {
+      console.error(e);
+      toast('Could not build the file: ' + ((e && e.message) || e), 6000, 'err');
+    }
+  }
+  /* an email the designer can send: .eml marked "unsent" opens as a new message in Outlook / Windows Mail / Thunderbird, file attached */
+  function emailBody() {
+    const first = C.customer.name.trim().split(/\s+/)[0] || 'there';
+    return (
+      'Hello ' + first + ',\n\nI\'ve put together my latest ideas for "' + C.project.name + '" (round ' + round().n + ').\n\n' +
+      'Open the attached file in your web browser (Chrome, Edge, Safari). It starts with a short personal slideshow, then you can tell me what you think of each idea: ' +
+      'love it, not for me, or see more like this, with room for your comments. When you are done, press "Submit project feedback" at the bottom and it will come straight back to me.\n\n' +
+      'Best wishes,\n' + (C.studio.designer || C.studio.name)
+    );
+  }
+  const subject = () => C.project.name + ' - design ideas for you (round ' + round().n + ')';
+  async function makeEml(blob) {
+    const b64 = async b => {
+      const u = new Uint8Array(await b.arrayBuffer());
+      let s = '';
+      for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192));
+      return btoa(s).replace(/.{1,76}/g, '$&\r\n');
+    };
+    const utf = s => btoa(unescape(encodeURIComponent(s)));
+    const bd = '----=_imagination_' + Date.now().toString(16);
+    const fn = packName();
+    const lines = [
+      'X-Unsent: 1',
+      'To: ' + C.customer.email,
+      'Subject: =?UTF-8?B?' + utf(subject()) + '?=',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="' + bd + '"',
+      '',
+      '--' + bd,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      utf(emailBody()).replace(/.{1,76}/g, '$&\r\n') + '--' + bd,
+      'Content-Type: text/html; name="' + fn + '"',
+      'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="' + fn + '"',
+      '',
+      (await b64(blob)) + '--' + bd + '--',
+      '',
+    ];
+    return new Blob([lines.join('\r\n')], { type: 'message/rfc822' });
+  }
+  function emailIt(blob) {
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<p>Your customer file is saved. Two ways to send it to <b>' + esc(C.customer.email || 'the customer') + '</b>:</p>' +
+      '<div class="cs-steps"><div><b>Outlook / Windows Mail:</b> press <i>Email with file attached</i>, open the message that is saved, press Send.</div>' +
+      '<div><b>Any other email app:</b> press <i>Open email</i>, then attach <span class="cs-file"></span> from the folder it was saved to.</div></div>' +
+      '<div class="hint">A web page cannot attach a file to an email by itself, so one of those two steps is needed. Your customer\'s reply is different: their Submit button does it for them.</div>';
+    $('.cs-file', body).textContent = packName();
+    MS.modal({
+      title: 'Send to ' + (C.customer.name || 'customer'),
+      body,
+      med: true,
+      buttons: [
+        { spacer: true },
+        { label: 'Close' },
+        {
+          label: 'Open email',
+          keepOpen: true,
+          action: () => {
+            location.href = 'mailto:' + encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent(subject()) + '&body=' + encodeURIComponent(emailBody());
+          },
+        },
+        {
+          label: 'Email with file attached',
+          primary: true,
+          keepOpen: true,
+          action: async () => {
+            MS.download(await makeEml(blob), fileSafe(C.project.name || 'Project') + ' - email.eml');
+            toast('Open the saved .eml message and press Send.', 5000);
+          },
+        },
+      ],
+    });
+  }
+
+  /* ---------------- the customer's reply ---------------- */
+  async function importReply(file) {
+    let j;
+    try {
+      j = JSON.parse(await file.text());
+    } catch (e) {
+      toast('That file could not be read.', 4000, 'err');
+      return;
+    }
+    applyReply(j);
+  }
+  function applyReply(j) {
+    if (!j || j.type !== 'imagination-consult-response') {
+      toast('That is not a feedback reply from a consultation.', 4500, 'err');
+      return;
+    }
+    if (j.packId !== C.id && !confirm('This reply was made for a different consultation file. Use it anyway?')) return;
+    const r = C.rounds.find(x => x.n === j.round) || round();
+    r.response = j;
+    dirty = true;
+    toast('Reply from ' + (j.customer.name || 'customer') + ' added to round ' + r.n + '.', 4000);
+    render();
+  }
+  /* a WhatsApp message from the customer carries a reply code: paste the whole message and the answers fill in */
+  function pasteReply() {
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<p>Copy the customer\'s WhatsApp message and paste it here, all of it, including the long code at the end.</p>' +
+      '<textarea id="csPaste" rows="8" style="width:100%" placeholder="Paste the message here"></textarea>';
+    MS.modal({
+      title: 'Paste a reply',
+      body,
+      med: true,
+      buttons: [
+        { spacer: true },
+        { label: 'Cancel' },
+        {
+          label: 'Add reply',
+          primary: true,
+          action: () => {
+            const m = /\[\[consult:([A-Za-z0-9+/=]+)\]\]/.exec($('#csPaste', body).value);
+            if (!m) {
+              toast('No reply code found. Paste the whole message, including the code at the end.', 5000, 'err');
+              return false;
+            }
+            let o;
+            try {
+              o = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+            } catch (e) {
+              toast('The code looks damaged. Ask the customer to send it again.', 5000, 'err');
+              return false;
+            }
+            const r = C.rounds.find(x => x.n === o.r) || round(),
+              title = id => 'Inspiration No ' + (r.ideas.findIndex(i => i.id === id) + 1);
+            applyReply({
+              type: 'imagination-consult-response',
+              v: 1,
+              packId: o.p,
+              round: r.n,
+              project: C.project.name,
+              customer: { name: o.c || C.customer.name, email: o.e || '' },
+              sentAt: new Date().toISOString(),
+              items: (o.i || []).map(x => ({ id: x[0], title: title(x[0]), choice: x[1], comment: x[2] })),
+              inspiration: [],
+              extra: o.x || '',
+              viaText: o.n || 0,
+            });
+          },
+        },
+      ],
+    });
+    setTimeout(() => $('#csPaste', body).focus(), 50);
+  }
+
+  /* ---------------- private link (GitHub Pages) ---------------- */
+  const newToken = () => {
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return [...a].map(x => (x % 36).toString(36)).join('') + Date.now().toString(36);
+  };
+  const linkMessage = url => {
+    const first = C.customer.name.trim().split(/\s+/)[0] || 'there';
+    return 'Hello ' + first + ', I\'ve put together some design ideas for "' + C.project.name + '" just for you. Open this and tell me what you think: ' + url;
+  };
+  async function linkCall(path, token, blob) {
+    const r = await fetch(path + '?token=' + token, { method: 'POST', headers: H, body: blob });
+    let j = {};
+    try {
+      j = await r.json();
+    } catch (e) {}
+    if (!r.ok || !j.ok) throw new Error(j.error || 'The link could not be made (' + r.status + ').');
+    return j;
+  }
+  async function createLink() {
+    if (!isLocal()) {
+      toast('Links are made from the "Start Imagination Studio" window on your PC.', 6000, 'err');
+      return;
+    }
+    if (waDigits(C.studio.whatsapp).length < 8) {
+      toast('Add your WhatsApp number first (with country code), otherwise their reply goes to email.', 7000, 'err');
+      const f = $('#csWa', api && api.body);
+      f && (f.scrollIntoView({ block: 'center' }), f.focus());
+      return;
+    }
+    const miss = checkReady();
+    if (miss.length) {
+      toast('Still needed: ' + miss.join(', ') + '.', 5200, 'err');
+      return;
+    }
+    const r = round();
+    if (!r.link || r.link.closed) r.link = { token: newToken(), url: '', created: Date.now(), closed: 0 };
+    toast('Putting the page online…', 8000);
+    try {
+      const blob = new Blob([await buildHtml(true)], { type: 'text/html' });
+      await saveConsult(true);
+      const j = await linkCall('consult-publish', r.link.token, blob);
+      r.link.url = j.url;
+      r.link.published = Date.now();
+      dirty = true;
+      await saveConsult(true);
+      render();
+      linkDialog();
+    } catch (e) {
+      console.error(e);
+      toast(String((e && e.message) || e), 7000, 'err');
+    }
+  }
+  async function closeLink() {
+    const r = round();
+    if (!r.link || r.link.closed) return;
+    if (!confirm('Close this link? Nobody will be able to open the page any more.')) return;
+    try {
+      await linkCall('consult-close', r.link.token);
+      r.link.closed = Date.now();
+      dirty = true;
+      await saveConsult(true);
+      render();
+      toast('Link closed. The page is being taken offline.', 5000);
+    } catch (e) {
+      toast(String((e && e.message) || e), 6000, 'err');
+    }
+  }
+  function linkDialog() {
+    const r = round(),
+      url = r.link.url,
+      msg = linkMessage(url),
+      body = document.createElement('div');
+    body.innerHTML =
+      '<p>Your private link for <b>' + esc(C.customer.name) + '</b> (round ' + r.n + '):</p>' +
+      '<input type="text" readonly id="csUrl" style="width:100%" value="' + esc(url) + '">' +
+      '<div class="cs-live" id="csLive">GitHub is putting the page online, this takes about a minute…</div>' +
+      '<div class="hint">Send it any way you like. When they press Submit it comes back to you on ' +
+      (waDigits(C.studio.whatsapp).length >= 8 ? 'WhatsApp' : 'email') + '. Close the link afterwards.</div>';
+    const dlg = MS.modal({
+      title: 'Send ' + (C.customer.name.split(/\s+/)[0] || 'the customer') + ' their link',
+      body,
+      med: true,
+      buttons: [
+        { spacer: true },
+        { label: 'Done' },
+        {
+          label: 'Email',
+          keepOpen: true,
+          action: () => {
+            location.href = 'mailto:' + encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent(subject()) + '&body=' + encodeURIComponent(msg);
+          },
+        },
+        {
+          label: 'Copy link',
+          keepOpen: true,
+          action: () => {
+            $('#csUrl', body).select();
+            (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(
+              () => toast('Link copied.', 2500),
+              () => document.execCommand('copy') && toast('Link copied.', 2500)
+            );
+          },
+        },
+        {
+          label: 'Send by WhatsApp',
+          primary: true,
+          keepOpen: true,
+          action: () => window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank'),
+        },
+      ],
+    });
+    // a new GitHub Pages address takes a little while to appear: check until it answers
+    let tries = 0;
+    const poll = async () => {
+      if (!dlg.el.isConnected || ++tries > 40) return;
+      try {
+        const x = await fetch(url, { cache: 'no-store' });
+        if (x.ok) {
+          const l = $('#csLive', body);
+          l.textContent = 'Live. The link works now.';
+          l.classList.add('on');
+          return;
+        }
+      } catch (e) {}
+      setTimeout(poll, 5000);
+    };
+    setTimeout(poll, 4000);
+  }
+  function nextRound() {
+    const r = round(),
+      res = r.response;
+    if (!res) return;
+    const next = { n: r.n + 1, date: Date.now(), message: '', ideas: [], response: null };
+    const by = {};
+    (res.items || []).forEach(x => (by[x.id] = x));
+    (res.inspiration || []).forEach(p =>
+      next.ideas.push({ id: newId('i'), title: p.caption ? p.caption.slice(0, 60) : 'Your inspiration', note: '', img: p.img, from: 'customer', prev: '' })
+    );
+    r.ideas.forEach(i => {
+      const x = by[i.id];
+      if (!x || x.choice === 'no') return;
+      next.ideas.push(Object.assign({}, i, { id: newId('i'), prev: x.choice ? 'Last time: ' + CHOICE[x.choice] : '' }));
+    });
+    C.rounds.push(next);
+    dirty = true;
+    render();
+    toast('Round ' + next.n + ' started. Loved and "more like this" ideas were carried over; your inspiration pictures are first.', 7000);
+  }
+
+  /* ---------------- the dialog ---------------- */
+  const input = (id, label, val, ph, type) =>
+    '<div class="cs-f"><label for="' + id + '">' + label + '</label><input type="' + (type || 'text') + '" id="' + id + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '" spellcheck="false"></div>';
+
+  function render() {
+    if (!api) return;
+    const b = api.body,
+      r = round(),
+      res = r.response;
+    const picked = res ? Object.fromEntries((res.items || []).map(x => [x.id, x])) : {};
+    const history = C.rounds.slice(0, -1);
+    b.innerHTML =
+      '<div class="cs-sec"><h3>The customer</h3><div class="cs-row">' +
+      input('csCName', 'Customer name', C.customer.name, 'Mary Corsie') + input('csCMail', 'Customer email', C.customer.email, 'mary@example.com', 'email') + '</div>' +
+      '<div class="cs-row">' + input('csProj', 'Project name', C.project.name, 'Elvis tribute hoodie') + '</div>' +
+      '<div class="cs-f"><label for="csOut">Project outline</label><textarea id="csOut" rows="3" placeholder="The vision in a few sentences, in your customer\'s own language.">' + esc(C.project.outline) + '</textarea></div>' +
+      '<div class="cs-f"><label for="csReq">Customer requirements <span class="cs-dim">(one per line)</span></label><textarea id="csReq" rows="4" placeholder="Black heavyweight hoodie&#10;Gold and white palette">' + esc((C.project.requirements || []).join('\n')) + '</textarea></div></div>' +
+      '<div class="cs-sec"><h3>From you</h3><div class="cs-row">' +
+      input('csStudio', 'Studio name', C.studio.name, 'Imagination Studio') + input('csDes', 'Your name', C.studio.designer, 'Chris') + '</div>' +
+      '<div class="cs-row">' + input('csWa', 'Your WhatsApp number (replies come here)', C.studio.whatsapp || '', '447700900123 (with country code)') +
+      input('csMail', 'Your email (optional backup)', C.studio.email, 'you@example.com', 'email') + '</div>' +
+      '<div class="cs-row"><div class="cs-f"><label>Your logo <span class="cs-dim">(optional)</span></label><div class="cs-logo"><span id="csLogoBox"></span><button class="btn sm" id="csLogoBtn">Choose…</button><button class="btn sm" id="csLogoClr">Clear</button></div></div></div>' +
+      '<div class="cs-row"><div class="cs-f"><label>Colours</label><div class="cs-colors"><span class="swatch-in"><input type="color" id="csAcc" value="' + esc(C.theme.accent) + '"></span> accent <span class="swatch-in"><input type="color" id="csPri" value="' + esc(C.theme.primary) + '"></span> main</div></div></div></div>' +
+      '<div class="cs-sec"><h3>Round ' + r.n + ' <span class="cs-dim">· ideas for the customer</span></h3>' +
+      '<div class="cs-f"><label for="csMsg">Personal note (shown in the slideshow and at the top of the form)</label><textarea id="csMsg" rows="3" placeholder="Mary, I\'ve explored three directions…">' + esc(r.message) + '</textarea></div>' +
+      (r.link && r.link.url
+        ? '<div class="cs-linkrow ' + (r.link.closed ? 'closed' : '') + '"><b>' + (r.link.closed ? 'Link closed' : 'Link is open') + '</b> <span class="cs-dim">' + esc(r.link.url) + '</span>' +
+          (r.link.closed ? '' : '<button class="btn sm" id="csLinkShow">Send / copy</button><button class="btn sm danger" id="csLinkClose">Close link</button>') + '</div>'
+        : '') +
+      '<div class="cs-ideas">' +
+      r.ideas.map((i, k) =>
+        '<div class="cs-idea" data-k="' + k + '"><div class="cs-pic"><img src="' + esc(i.img) + '" alt=""><span class="cs-no">No ' + (k + 1) + '</span>' +
+        (i.from === 'customer' ? '<span class="cs-tag">Their inspiration</span>' : '') +
+        (picked[i.id] && picked[i.id].choice ? '<span class="cs-badge ' + picked[i.id].choice + '">' + CHOICE[picked[i.id].choice] + '</span>' : '') + '</div>' +
+        '<input type="text" class="cs-title" placeholder="Private label (customer sees: Inspiration No ' + (k + 1) + ')" value="' + esc(i.title) + '" spellcheck="false">' +
+        '<textarea class="cs-note" rows="2" placeholder="Your note to the customer">' + esc(i.note) + '</textarea>' +
+        (picked[i.id] && picked[i.id].comment ? '<div class="cs-said">“' + esc(picked[i.id].comment) + '”</div>' : '') +
+        '<div class="cs-ctl"><button class="ib" data-mv="-1" data-tip="Move earlier">' + MS.icon('chevl') + '</button><button class="ib" data-mv="1" data-tip="Move later">' + MS.icon('chevr') + '</button><span class="grow"></span><button class="ib" data-del data-tip="Remove">' + MS.icon('trash') + '</button></div></div>'
+      ).join('') +
+      '<div class="cs-add"><button class="btn" id="csAddDesign">' + MS.icon('plus') + 'Add the open design</button><button class="btn" id="csAddPics">' + MS.icon('image') + 'Add pictures…</button></div></div></div>' +
+      (res
+        ? '<div class="cs-sec cs-reply"><h3>' + esc(res.customer.name || 'Customer') + '\'s reply <span class="cs-dim">· round ' + r.n + '</span></h3>' +
+          '<div class="cs-sum">' + ['love', 'more', 'no'].map(c => '<span class="cs-badge ' + c + '">' + (res.items || []).filter(x => x.choice === c).length + ' ' + CHOICE[c] + '</span>').join('') + '</div>' +
+          (res.extra ? '<div class="cs-said"><b>Anything else:</b> ' + esc(res.extra) + '</div>' : '') +
+          ((res.inspiration || []).length ? '<div class="cs-said"><b>' + res.inspiration.length + ' picture(s) of their own</b> will be added at the start of the next round.</div>' : '') +
+          '<div class="hint">Their comments show under each idea above.</div>' +
+          '<div><button class="btn primary" id="csNext">Start round ' + (r.n + 1) + ' from this reply</button></div></div>'
+        : '') +
+      (history.length
+        ? '<div class="cs-sec"><h3>Earlier rounds</h3>' +
+          history.map(h => '<div class="hint">Round ' + h.n + ' · ' + longDate(h.date) + ' · ' + h.ideas.length + ' ideas' + (h.response ? ' · reply received ' + longDate(Date.parse(h.response.sentAt)) : ' · no reply imported') + '</div>').join('') + '</div>'
+        : '');
+    bind(b);
+    window.MSI.hydrate(b);
+  }
+
+  function addIdea(img, title) {
+    round().ideas.push({ id: newId('i'), title: title || '', note: '', img, from: '', prev: '' });
+    dirty = true;
+    render();
+  }
+  function bind(b) {
+    const on = (id, fn) => $('#' + id, b).addEventListener('input', fn);
+    on('csCName', e => ((C.customer.name = e.target.value), (dirty = true)));
+    on('csCMail', e => ((C.customer.email = e.target.value), (dirty = true)));
+    on('csProj', e => ((C.project.name = e.target.value), (dirty = true)));
+    on('csOut', e => ((C.project.outline = e.target.value), (dirty = true)));
+    on('csReq', e => ((C.project.requirements = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)), (dirty = true)));
+    on('csStudio', e => ((C.studio.name = e.target.value), (dirty = true)));
+    on('csDes', e => ((C.studio.designer = e.target.value), (dirty = true)));
+    on('csMail', e => ((C.studio.email = e.target.value), (dirty = true)));
+    on('csWa', e => ((C.studio.whatsapp = e.target.value), (dirty = true)));
+    const ls = $('#csLinkShow', b),
+      lc = $('#csLinkClose', b);
+    ls && (ls.onclick = linkDialog);
+    lc && (lc.onclick = closeLink);
+    on('csMsg', e => ((round().message = e.target.value), (dirty = true)));
+    on('csAcc', e => ((C.theme.accent = e.target.value), (dirty = true)));
+    on('csPri', e => ((C.theme.primary = e.target.value), (dirty = true)));
+    const logo = () => ($('#csLogoBox', b).innerHTML = C.studio.logo ? '<img src="' + esc(C.studio.logo) + '" alt="">' : '<span class="cs-dim">none</span>');
+    logo();
+    $('#csLogoBtn', b).onclick = () => pick(false, async f => ((C.studio.logo = await shrinkImage(await fileToURL(f[0]), 600, 0.9)), logo(), (dirty = true)));
+    $('#csLogoClr', b).onclick = () => ((C.studio.logo = ''), logo(), (dirty = true));
+    $('#csAddPics', b).onclick = () =>
+      pick(true, async fs => {
+        for (const f of fs) {
+          try {
+            addIdea(await shrinkImage(await fileToURL(f), 1400, 0.85), f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+          } catch (e) {
+            toast('Could not read ' + f.name, 3500, 'err');
+          }
+        }
+      });
+    $('#csAddDesign', b).onclick = async () => {
+      if (!MS.canvas || !S.doc) return toast('Open a design first.', 3000, 'err');
+      try {
+        const d = S.doc,
+          mult = Math.min(1, 1400 / Math.max(d.wPx, d.hPx)),
+          url = MS.renderDataURL({ multiplier: mult, background: '#ffffff', format: 'image/jpeg', quality: 0.88 });
+        addIdea(url, S.doc.name || 'Design');
+      } catch (e) {
+        console.error(e);
+        toast('Could not capture the design.', 4000, 'err');
+      }
+    };
+    $$('.cs-idea', b).forEach(el => {
+      const k = +el.dataset.k,
+        it = round().ideas[k];
+      $('.cs-title', el).addEventListener('input', e => ((it.title = e.target.value), (dirty = true)));
+      $('.cs-note', el).addEventListener('input', e => ((it.note = e.target.value), (dirty = true)));
+      $('[data-del]', el).onclick = () => (round().ideas.splice(k, 1), (dirty = true), render());
+      $$('[data-mv]', el).forEach(m =>
+        m.addEventListener('click', () => {
+          const a = round().ideas,
+            j = k + +m.dataset.mv;
+          if (j < 0 || j >= a.length) return;
+          [a[k], a[j]] = [a[j], a[k]];
+          dirty = true;
+          render();
+        })
+      );
+    });
+    const nx = $('#csNext', b);
+    nx && (nx.onclick = nextRound);
+  }
+  function pick(multi, fn) {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = 'image/*';
+    i.multiple = !!multi;
+    i.onchange = () => i.files.length && fn([...i.files]);
+    i.click();
+  }
+
+  /* ---------------- start screen + main entry ---------------- */
+  async function startScreen() {
+    const saved = await listSaved();
+    const body = document.createElement('div');
+    body.innerHTML =
+      '<p>Build a beautiful, personal consultation for a customer: their brief, your latest ideas, and a feedback form they fill in and send straight back. Each round builds on the last.</p>' +
+      '<div><button class="btn primary" id="csNew">' + MS.icon('plus') + 'New consultation</button> <button class="btn" id="csOpenFile">' + MS.icon('open') + 'Open a consultation file…</button></div>' +
+      (C ? '<div><button class="btn" id="csCont">Continue with ' + esc(C.customer.name || 'the open consultation') + '</button></div>' : '') +
+      (saved.length
+        ? '<h3 class="cs-h">Saved customers</h3><div class="cs-saved">' +
+          saved.sort((a, b) => b.modified - a.modified).map(s => '<button class="btn" data-sub="' + esc(s.sub) + '">' + esc(s.sub.replace(/_/g, ' ')) + '</button>').join('') + '</div>'
+        : '<div class="hint">' + (isLocal() ? 'No saved consultations yet.' : 'Consultations are saved as a file you keep. Open them again with "Open a consultation file".') + '</div>');
+    const dlg = MS.modal({ title: 'Client consultation', body, med: true, buttons: [{ spacer: true }, { label: 'Close' }] });
+    const go = () => (dlg.close(), openEditor());
+    $('#csNew', body).onclick = () => ((C = blank()), go());
+    $('#csOpenFile', body).onclick = () =>
+      pick(false, async f => {
+        try {
+          adopt(JSON.parse(await f[0].text()));
+          go();
+        } catch (e) {
+          toast(e.message || 'Could not open that file.', 4500, 'err');
+        }
+      });
+    const cont = $('#csCont', body);
+    cont && (cont.onclick = go);
+    $$('[data-sub]', body).forEach(btn =>
+      btn.addEventListener('click', async () => {
+        try {
+          await openSaved(btn.dataset.sub);
+          go();
+        } catch (e) {
+          toast('Could not open that consultation.', 4500, 'err');
+        }
+      })
+    );
+  }
+  function openEditor() {
+    api = MS.modal({
+      title: 'Client consultation',
+      body: document.createElement('div'),
+      wide: true,
+      sticky: true,
+      onClose: () => {
+        if (dirty && isLocal() && C.customer.name.trim()) saveConsult(true);
+        api = null;
+      },
+      buttons: [
+        { id: 'csStat', spacer: true },
+        { label: 'Paste reply…', icon: 'import', keepOpen: true, action: pasteReply },
+        { label: 'Open reply file…', keepOpen: true, action: () => pick(false, f => importReply(f[0])) },
+        { label: 'Save', icon: 'save', keepOpen: true, action: () => saveConsult() },
+        { label: 'Save as a file', icon: 'export', keepOpen: true, action: () => build(true) },
+        { label: 'Create link', primary: true, icon: 'link', keepOpen: true, action: createLink },
+      ],
+    });
+    api.body.classList.add('cs');
+    render();
+  }
+  CS.open = () => !api && startScreen();
+  CS._state = () => C; // for tests
+})();
+
+;
 /* js/compat.js */
 /* Imagination Studio - "Build for" compatibility checker: tells you what will not survive the target you are designing for. */
 (function () {
@@ -25836,6 +26525,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       bullets: [
         'Save keeps an editable project; Export makes a picture.',
         'File ▸ Open from saved files shows thumbnails of everything you saved.',
+        'File ▸ Client consultation builds a personal slideshow + feedback form to email to a customer.',
         'Browse another folder (such as Downloads) to open files saved by Chrome.',
       ],
       steps: [
@@ -27249,6 +27939,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
           },
           { label: 'Open project…', icon: 'open', key: 'Ctrl+O', action: () => $('#projectLoadInput').click() },
           { label: 'Open from saved files…', icon: 'folder', key: 'Ctrl+Shift+O', action: () => MS.openFiles() },
+          { label: 'Client consultation…', icon: 'sparkle', action: () => MS.consult && MS.consult.open() },
           { label: 'Import picture / SVG…', icon: 'image', key: 'Ctrl+Shift+I', action: () => $('#fileImportInput').click() },
           '-',
           { label: 'Save project', icon: 'save', key: 'Ctrl+S', action: MS.saveProject },

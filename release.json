@@ -1,14 +1,11 @@
 {
-  "version": "4.26 beta",
+  "version": "4.27 beta",
   "date": "2026-10-29",
   "notes": [
-    "New logo: the title screen shows the full Imagination Studio logo, and the square IS logo is used for the top bar, start page, About, the app icon and the browser tab.",
-    "Saved groups now belong to the project they were saved in. The Groups panel only lists the open project's groups, so a new project starts empty.",
-    "Saving a group asks for a name first, and a new Saved drop-down beside the panel button lists every saved group, organised by project.",
-    "Every colour picker now remembers your last 5 colours and shows the colour live as you pick, with OK to keep it and Cancel to put it back.",
-    "Textures on outline shapes now fill the line itself, not the empty centre.",
-    "New None tile in the texture list takes a texture off again.",
-    "Update now asks you to save open projects first, and tells you if unsaved work is at risk.",
-    "The title screen logo is bigger, stays the same size when an update appears (it just slides up), and shows a single Update now button."
+    "New: Client consultation (File menu). Build a personal page for a customer with their project outline and requirements, your latest design ideas and a note from you.",
+    "Create link puts the page online at a private address and gives you a link to send by WhatsApp, text or email. The customer clicks through a personal slideshow at their own pace, then answers every idea with Love it, Not for me or See more like this, plus comments. At the end they can watch it as a film with the promo tune, and save a copy.",
+    "Their Submit button opens WhatsApp with the whole reply already written to your number. Paste it into the app and the answers fill in on each idea. Email still works as a backup.",
+    "Close link takes the page offline once you have their reply. Start the next round with the loved ideas and their own pictures carried over.",
+    "Needs the Start Imagination Studio window and a one-time GitHub setup. Saved in the customer folder next to the app."
   ]
 }
