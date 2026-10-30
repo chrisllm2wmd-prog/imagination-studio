@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.27 beta';
+window.IMAGINATION_VERSION = '4.28 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -626,6 +626,8 @@ document.addEventListener('DOMContentLoaded', () => {
     alignobj: 'M3 3h6v6H3zM15 15h6v6h-6z',
     compare: 'M12 3v18M4 6h5v12H4z',
     merge: 'M5 4v6a4 4 0 004 4h6M19 4v6a4 4 0 01-4 4M12 14v6',
+    mproject: 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2zM12 11v6M9 14h6',
+    silhouette: 'M12 3.5a3.8 3.8 0 100 7.6 3.8 3.8 0 000-7.6zM4.5 20.5c0-4.6 3.4-7.4 7.5-7.4s7.5 2.8 7.5 7.4z',
     dots: 'M12 12m-1 0a1 1 0 102 0 1 1 0 10-2 0M12 5m-1 0a1 1 0 102 0 1 1 0 10-2 0M12 19m-1 0a1 1 0 102 0 1 1 0 10-2 0',
   };
   function svg(name, cls) {
@@ -1508,7 +1510,9 @@ document.addEventListener('DOMContentLoaded', () => {
     box.innerHTML =
       '<div class="cpk-sv"><i class="cpk-dot"></i></div><div class="cpk-hue"><i class="cpk-hd"></i></div>' +
       '<div class="cpk-row"><span class="cpk-old" title="Current"></span><span class="cpk-new" title="New"></span>' +
-      '<input class="cpk-hex" type="text" maxlength="7" spellcheck="false"></div>' +
+      '<input class="cpk-hex" type="text" maxlength="7" spellcheck="false"><button class="cpk-eye" type="button" data-tip="Pick a colour from anywhere on screen">' +
+      MS.icon('dropper') +
+      '</button></div>' +
       '<div class="cpk-h">Last used</div><div class="cpk-rec">' +
       (recent.length
         ? recent.map(c => `<button class="cpk-sw" data-c="${c}" title="${c}" style="background:${c}"></button>`).join('')
@@ -1576,6 +1580,37 @@ document.addEventListener('DOMContentLoaded', () => {
         close(true);
       }
     });
+    // eyedropper: anywhere on screen where the browser allows it (Chrome / Edge), otherwise a click on the design
+    let sampling = false;
+    const take = c => {
+      if (setHex(c)) {
+        paint();
+        live();
+      }
+    };
+    box.querySelector('.cpk-eye').addEventListener('click', async () => {
+      if (window.EyeDropper) {
+        try {
+          take((await new window.EyeDropper().open()).sRGBHex);
+        } catch (e) {
+          /* cancelled */
+        }
+        return;
+      }
+      sampling = true;
+      box.classList.add('sampling');
+      MS.toast('Click a colour on the design to pick it.');
+    });
+    const sample = e => {
+      const c = MS.canvas && MS.canvas.lowerCanvasEl;
+      if (!c) return false;
+      const r = c.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return false;
+      const k = c.width / r.width,
+        d = c.getContext('2d').getImageData(Math.round((e.clientX - r.left) * k), Math.round((e.clientY - r.top) * k), 1, 1).data;
+      if (d[3]) take(rgb2hex(d[0], d[1], d[2]));
+      return true;
+    };
     box.querySelector('.cpk-rec').addEventListener('click', e => {
       const b = e.target.closest('.cpk-sw');
       if (b && setHex(b.dataset.c)) {
@@ -1601,6 +1636,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const away = e => {
       if (box.contains(e.target)) return;
+      if (sampling) {
+        sampling = false;
+        box.classList.remove('sampling');
+        if (sample(e)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
       e.preventDefault();
       e.stopPropagation();
       MS.nudgeBox(box);
@@ -5665,6 +5709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return o;
   }
+  MS.makeShape = makeShape; // the crop tool draws its cut-out outline with the same shapes
   function describe(kind) {
     return (
       {
@@ -6247,6 +6292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!t) return;
     if (t.action) {
       if (id === 'image') $('#fileImportInput').click();
+      else if (t.run) t.run();
       return;
     }
     const c = cv(),
@@ -6272,10 +6318,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (t.enter) t.enter();
     c.requestRenderAll();
     $$('#toolbox .tool').forEach(b =>
-      b.classList.toggle('active', b.dataset.tool === id || (b.dataset.group && t.group === b.dataset.group))
+      b.classList.toggle('active', b.dataset.tool === id || !!(b.dataset.group && t.group === b.dataset.group))
     );
-    const gb = $('#toolbox .tool[data-group="shapes"]');
-    if (gb && t.group === 'shapes') {
+    const gb = t.group && $('#toolbox .tool[data-group="' + t.group + '"]');
+    if (gb) {
       gb.dataset.tool = id;
       gb.innerHTML = MS.icon(t.icon);
       gb.setAttribute('data-tip', t.label + (t.key ? '|' + t.key : ''));
@@ -6670,7 +6716,7 @@ document.addEventListener('DOMContentLoaded', () => {
           b.dataset.armed = '';
         }, 500);
       });
-      if (t.isShape) styleHover(b);
+      if (t.isShape || group === 'crop') styleHover(b);
       if (group) {
         b.addEventListener('contextmenu', e => {
           e.preventDefault();
@@ -6703,6 +6749,8 @@ document.addEventListener('DOMContentLoaded', () => {
     add('image');
     add('wand');
     add('eraser');
+    if (defs['crop:free']) add('crop:free', 'crop');
+    if (defs.silhouette) add('silhouette');
     add('dropper');
     sep();
     MS.liveSym && MS.liveSym.addButton(box);
@@ -6796,7 +6844,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pop.className = 'flyout shape-style';
       const items = order.filter(id => defs[id].group === b.dataset.group && id !== 'rrect'); // corner radius lives in the Design panel for every shape
       pop.innerHTML =
-        '<div class="ss-h hint">Shapes</div><div class="ss-grid">' +
+        `<div class="ss-h hint">${b.dataset.group === 'crop' ? 'Crop with' : 'Shapes'}</div><div class="ss-grid">` +
         items
           .map(
             id =>
@@ -6815,7 +6863,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const x = e.target.closest('button');
         if (!x) return;
         if (x.dataset.tool) {
-          if (x.dataset.tool === 'line' || x.dataset.tool === 'arrow') {
+          if (x.dataset.tool === 'line' || x.dataset.tool === 'arrow' || b.dataset.group === 'crop') {
             T.set(x.dataset.tool);
             kill();
           } else askStyle(x.dataset.tool, e);
@@ -7363,6 +7411,990 @@ document.addEventListener('DOMContentLoaded', () => {
     T.set('move');
   };
   MS.setTool = T.set;
+})();
+
+;
+/* js/smartcut.js */
+/* Imagination Studio - smart edge detection, shared by the Crop tool ("Smart edge") and the Silhouette maker.
+   MS.smart.mask(rgba, w, h, inside): you say roughly where the subject is (inside = 1) and where it certainly is not (0);
+   colour models of "subject" and "background" are learned from those two areas and refined a few rounds, so the cut snaps to the
+   real edge of the subject. The result is cleaned up (speckles, stray islands, holes). */
+(function () {
+  'use strict';
+  const MS = window.MS;
+
+  // number of set pixels in a window, from an integral image
+  function integral(m, w, h) {
+    const I = new Int32Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) {
+        row += m[y * w + x];
+        I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row;
+      }
+    }
+    return I;
+  }
+  const win = (I, w, h, x, y, r) => {
+    const x0 = Math.max(0, x - r),
+      y0 = Math.max(0, y - r),
+      x1 = Math.min(w, x + r + 1),
+      y1 = Math.min(h, y + r + 1),
+      W = w + 1;
+    return I[y1 * W + x1] - I[y0 * W + x1] - I[y1 * W + x0] + I[y0 * W + x0];
+  };
+  function erode(m, w, h, r) {
+    const z = new Uint8Array(w * h);
+    for (let i = 0; i < z.length; i++) z[i] = m[i] ? 0 : 1;
+    const I = integral(z, w, h),
+      o = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (m[y * w + x] && !win(I, w, h, x, y, r)) o[y * w + x] = 1;
+    return o;
+  }
+  // a pixel stays set if at least `need` of the (2r+1)^2 window is set
+  function vote(m, w, h, r, need) {
+    const I = integral(m, w, h),
+      o = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (win(I, w, h, x, y, r) >= need) o[y * w + x] = 1;
+    return o;
+  }
+  // keep only the biggest connected blob
+  function largest(m, w, h) {
+    const lab = new Int32Array(w * h),
+      q = new Int32Array(w * h);
+    let best = 0,
+      bestN = 0,
+      id = 0;
+    for (let s = 0; s < m.length; s++) {
+      if (!m[s] || lab[s]) continue;
+      id++;
+      let head = 0,
+        tail = 0,
+        n = 0;
+      q[tail++] = s;
+      lab[s] = id;
+      while (head < tail) {
+        const p = q[head++],
+          x = p % w,
+          y = (p / w) | 0;
+        n++;
+        if (x > 0 && m[p - 1] && !lab[p - 1]) ((lab[p - 1] = id), (q[tail++] = p - 1));
+        if (x < w - 1 && m[p + 1] && !lab[p + 1]) ((lab[p + 1] = id), (q[tail++] = p + 1));
+        if (y > 0 && m[p - w] && !lab[p - w]) ((lab[p - w] = id), (q[tail++] = p - w));
+        if (y < h - 1 && m[p + w] && !lab[p + w]) ((lab[p + w] = id), (q[tail++] = p + w));
+      }
+      if (n > bestN) ((bestN = n), (best = id));
+    }
+    const o = new Uint8Array(w * h);
+    for (let i = 0; i < o.length; i++) if (lab[i] === best) o[i] = 1;
+    return o;
+  }
+  // background that touches the picture edge stays background; every other hole is filled
+  function fillHoles(m, w, h) {
+    const seen = new Uint8Array(w * h),
+      q = new Int32Array(w * h);
+    let head = 0,
+      tail = 0;
+    const push = p => {
+      if (!m[p] && !seen[p]) ((seen[p] = 1), (q[tail++] = p));
+    };
+    for (let x = 0; x < w; x++) (push(x), push((h - 1) * w + x));
+    for (let y = 0; y < h; y++) (push(y * w), push(y * w + w - 1));
+    while (head < tail) {
+      const p = q[head++],
+        x = p % w,
+        y = (p / w) | 0;
+      if (x > 0) push(p - 1);
+      if (x < w - 1) push(p + 1);
+      if (y > 0) push(p - w);
+      if (y < h - 1) push(p + w);
+    }
+    const o = new Uint8Array(w * h);
+    for (let i = 0; i < o.length; i++) o[i] = m[i] || !seen[i] ? 1 : 0;
+    return o;
+  }
+
+  function mask(rgba, w, h, inside, opt) {
+    opt = opt || {};
+    const n = w * h,
+      bin = new Uint16Array(n),
+      ok = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const k = i * 4;
+      bin[i] = ((rgba[k] >> 4) << 8) | ((rgba[k + 1] >> 4) << 4) | (rgba[k + 2] >> 4);
+      ok[i] = rgba[k + 3] >= 10 ? 1 : 0;
+    }
+    let x0 = w,
+      y0 = h,
+      x1 = 0,
+      y1 = 0,
+      cnt = 0;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        if (inside[y * w + x]) {
+          cnt++;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+    if (!cnt) return new Uint8Array(n);
+    // the sure-subject core: well inside the rough outline
+    const r0 = Math.max(1, Math.round(0.12 * Math.min(x1 - x0, y1 - y0)));
+    let core = opt.core || erode(inside, w, h, r0);
+    let cc = 0;
+    for (let i = 0; i < n; i++) cc += core[i];
+    if (cc < 30 && !opt.core) core = erode(inside, w, h, Math.max(1, r0 >> 2));
+    cc = 0;
+    for (let i = 0; i < n; i++) cc += core[i];
+    if (cc < 30) core = inside;
+    const label = new Uint8Array(n);
+    for (let i = 0; i < n; i++) label[i] = core[i] && ok[i] ? 1 : 0;
+    for (let it = 0; it < 5; it++) {
+      const hf = new Float32Array(4096).fill(0.5),
+        hb = new Float32Array(4096).fill(0.5);
+      let sf = 4096 * 0.5,
+        sb = 4096 * 0.5;
+      for (let i = 0; i < n; i++) {
+        if (!ok[i]) continue;
+        if (inside[i] && label[i]) ((hf[bin[i]]++), sf++);
+        else if (it || !inside[i]) ((hb[bin[i]]++), sb++); // first round: only the sure background teaches the background model
+      }
+      for (let i = 0; i < n; i++) {
+        if (!inside[i]) label[i] = 0;
+        else if (!ok[i]) label[i] = 0;
+        else if (core[i]) label[i] = 1;
+        else label[i] = hf[bin[i]] / sf > hb[bin[i]] / sb ? 1 : 0;
+      }
+    }
+    let m = vote(label, w, h, 1, 5);
+    m = vote(m, w, h, 1, 5);
+    for (let i = 0; i < n; i++) m[i] = m[i] && inside[i] ? 1 : 0;
+    m = largest(m, w, h);
+    if (!opt.keepHoles) m = fillHoles(m, w, h);
+    return m;
+  }
+
+  // a rough outline drawn as a canvas (alpha > 128 = inside) -> {rgba, w, h} work copy no bigger than `max` px
+  function work(canvas, max) {
+    const k = Math.min(1, max / Math.max(canvas.width, canvas.height)),
+      w = Math.max(1, Math.round(canvas.width * k)),
+      h = Math.max(1, Math.round(canvas.height * k));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(canvas, 0, 0, w, h);
+    return { w, h, data: x.getImageData(0, 0, w, h).data };
+  }
+  // 0/1 mask at work size -> a canvas of any size (soft edge from the smooth up-scale)
+  function maskCanvas(m, w, h, W, H) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const x = c.getContext('2d'),
+      d = x.createImageData(w, h);
+    for (let i = 0; i < m.length; i++) {
+      d.data[i * 4 + 3] = m[i] ? 255 : 0;
+    }
+    x.putImageData(d, 0, 0);
+    const o = document.createElement('canvas');
+    o.width = W;
+    o.height = H;
+    const ox = o.getContext('2d');
+    ox.imageSmoothingEnabled = true;
+    ox.imageSmoothingQuality = 'high';
+    ox.drawImage(c, 0, 0, W, H);
+    return o;
+  }
+
+  MS.smart = { mask, work, maskCanvas, vote, erode, largest, fillHoles };
+})();
+
+;
+/* js/crop.js */
+/* Imagination Studio - Crop tool.
+   Pick the tool (hover it for the same shape grid the draw tools have: Freehand, Smart edge, or any shape), then draw round part of an element.
+   The element is cut in two and BOTH parts stay on screen as their own pictures: the piece you drew round, and what was left behind.
+   Each one moves, resizes, saves or deletes on its own, and its hit box is trimmed to its real shape (clicks on the empty corners pass through).
+   Smart edge: loop loosely round the subject and the cut snaps to the subject's real edge (js/smartcut.js). */
+(function () {
+  'use strict';
+  const MS = window.MS,
+    S = MS.S;
+  const { toast, clamp } = MS;
+  const T = MS.tools;
+  if (!T || !MS.makeShape) return;
+  const cv = () => MS.canvas;
+  const KINDS = MS.shapeKinds.filter(k => k !== 'cross' && k !== 'ring');
+  const NAMES = { rrect: 'Rounded rectangle', star4: '4-point star', rtriangle: 'Right triangle', blockarrow: 'Block arrow', darrow: 'Double arrow', bolt: 'Lightning bolt' };
+  const label = k => NAMES[k] || k.charAt(0).toUpperCase() + k.slice(1);
+  const kindOf = () => (T.current() || {}).cropKind || 'free';
+  const loopy = k => k === 'free' || k === 'smart'; // drawn by dragging a loop, not a box
+
+  let start = null,
+    pts = [],
+    temp = null,
+    moved = false,
+    busy = false;
+
+  const PREVIEW = { fill: 'rgba(91,140,255,.18)', stroke: '#5b8cff', strokeWidth: 2, strokeDashArray: [6, 4], strokeUniform: true };
+
+  // a smooth closed outline through the points the mouse went through
+  function smoothPath(list) {
+    const n = list.length;
+    if (n < 3) return null;
+    const mid = (a, b) => ((a.x + b.x) / 2).toFixed(2) + ' ' + ((a.y + b.y) / 2).toFixed(2);
+    let d = 'M ' + mid(list[n - 1], list[0]);
+    for (let i = 0; i < n; i++) d += ' Q ' + list[i].x.toFixed(2) + ' ' + list[i].y.toFixed(2) + ' ' + mid(list[i], list[(i + 1) % n]);
+    return d + ' Z';
+  }
+  // the outline for the current pointer position (canvas units); null while it is too small to show
+  function outline(p, e) {
+    const kind = kindOf();
+    if (loopy(kind)) {
+      const d = smoothPath(pts);
+      return d ? new fabric.Path(d) : null;
+    }
+    let x0 = Math.min(start.x, p.x),
+      y0 = Math.min(start.y, p.y),
+      w = Math.abs(p.x - start.x),
+      h = Math.abs(p.y - start.y);
+    if (e && e.shiftKey) {
+      const m = Math.max(w, h);
+      w = h = m;
+      x0 = p.x < start.x ? start.x - m : start.x;
+      y0 = p.y < start.y ? start.y - m : start.y;
+    }
+    if (e && e.altKey) {
+      x0 = start.x - w;
+      y0 = start.y - h;
+      w *= 2;
+      h *= 2;
+    }
+    if (w < 2 || h < 2) return null;
+    return MS.makeShape(kind, x0, y0, w, h);
+  }
+  function showTemp(o) {
+    if (temp) cv().remove(temp);
+    temp = o;
+    if (temp) {
+      temp.set({ ...PREVIEW, selectable: false, evented: false });
+      temp.__cropPreview = true;
+      cv().add(temp);
+    }
+    cv().requestRenderAll();
+  }
+
+  // which element did the outline go round? the selected one if it is under the outline, else the top-most one under its centre
+  function targetFor(shape) {
+    const c = cv(),
+      pt = shape.getCenterPoint(),
+      a = c.getActiveObject(),
+      ok = o => o && o.visible && !o.__isBackground && !o.__cropPreview;
+    if (ok(a) && a.type !== 'activeSelection' && a.containsPoint(pt, null, true, true)) return a;
+    const objs = c.getObjects().filter(ok);
+    const under = p => {
+      for (let i = objs.length - 1; i >= 0; i--) if (objs[i].containsPoint(new fabric.Point(p.x, p.y), null, true, true)) return objs[i];
+      return null;
+    };
+    const r = shape.getBoundingRect(true, true);
+    const hit = under(pt) || under(start) || under({ x: r.left + 2, y: r.top + 2 }) || under({ x: r.left + r.width - 2, y: r.top + r.height - 2 });
+    if (hit) return hit;
+    for (let i = objs.length - 1; i >= 0; i--)
+      if (objs[i].intersectsWithRect(new fabric.Point(r.left, r.top), new fabric.Point(r.left + r.width, r.top + r.height), true, true)) return objs[i];
+    return ok(a) && a.type !== 'activeSelection' ? a : null;
+  }
+
+  const clone = o => new Promise(res => o.clone(res));
+  // the element drawn to pixels; with an outline it is clipped to it (inside kept, or inside removed when inverted)
+  async function shot(target, shape, inverted, m) {
+    const cl = await clone(target);
+    cl.set({ opacity: 1, shadow: null, visible: true });
+    if (shape) {
+      const clip = await clone(shape);
+      const tc = target.getCenterPoint(),
+        sc = shape.getCenterPoint();
+      const mx = fabric.util.composeMatrix({ translateX: tc.x, translateY: tc.y, angle: target.angle || 0, scaleX: target.scaleX, scaleY: target.scaleY });
+      const loc = fabric.util.transformPoint(sc, fabric.util.invertTransform(mx));
+      clip.set({
+        fill: '#000000',
+        stroke: null,
+        strokeWidth: 0,
+        strokeDashArray: null,
+        originX: 'center',
+        originY: 'center',
+        left: loc.x,
+        top: loc.y,
+        scaleX: (shape.scaleX || 1) / (target.scaleX || 1),
+        scaleY: (shape.scaleY || 1) / (target.scaleY || 1),
+        angle: (shape.angle || 0) - (target.angle || 0),
+      });
+      clip.inverted = inverted;
+      clip.absolutePositioned = false;
+      cl.clipPath = clip;
+    } else cl.clipPath = null;
+    cl.dirty = true;
+    return cl.toCanvasElement({ multiplier: m, enableRetinaScaling: false });
+  }
+  // trim the pixels to what is visible and make it a picture exactly where it was
+  function pack(el, br, target) {
+    const w = el.width,
+      h = el.height,
+      data = el.getContext('2d').getImageData(0, 0, w, h).data;
+    let x0 = w,
+      y0 = h,
+      x1 = -1,
+      y1 = -1;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        if (data[(y * w + x) * 4 + 3] > 2) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+    if (x1 < 0) return null;
+    const k = document.createElement('canvas');
+    k.width = x1 - x0 + 1;
+    k.height = y1 - y0 + 1;
+    k.getContext('2d').drawImage(el, -x0, -y0);
+    const sx = br.width / w,
+      sy = br.height / h;
+    return new fabric.Image(k, {
+      left: br.left + x0 * sx,
+      top: br.top + y0 * sy,
+      originX: 'left',
+      originY: 'top',
+      scaleX: sx,
+      scaleY: sy,
+      opacity: target.opacity,
+      globalCompositeOperation: target.globalCompositeOperation,
+      perPixelTargetFind: true, // the hit box follows the shape, not the old rectangle
+      targetFindTolerance: 2,
+    });
+  }
+  // smart edge: the rough loop says where the subject is, the colours of the picture say where its edge really runs
+  async function smartParts(target, shape, m) {
+    const full = await shot(target, null, false, m),
+      rough = await shot(target, shape, false, m);
+    const a = MS.smart.work(full, 700),
+      b = MS.smart.work(rough, 700);
+    const inside = new Uint8Array(a.w * a.h);
+    for (let i = 0; i < inside.length; i++) inside[i] = b.data[i * 4 + 3] > 128 ? 1 : 0;
+    const mk = MS.smart.mask(a.data, a.w, a.h, inside);
+    const mc = MS.smart.maskCanvas(mk, a.w, a.h, full.width, full.height);
+    const part = op => {
+      const c = document.createElement('canvas');
+      c.width = full.width;
+      c.height = full.height;
+      const x = c.getContext('2d');
+      x.drawImage(full, 0, 0);
+      x.globalCompositeOperation = op;
+      x.drawImage(mc, 0, 0);
+      return c;
+    };
+    return [part('destination-in'), part('destination-out')];
+  }
+  async function cutApart(target, shape, smart) {
+    const c = cv(),
+      br = target.getBoundingRect(true, true);
+    let m = target.type === 'image' ? 1 / Math.max(0.01, Math.min(Math.abs(target.scaleX), Math.abs(target.scaleY))) : 2;
+    m = clamp(m, 0.5, 4);
+    while (Math.max(br.width, br.height) * m > (smart ? 2400 : 6000) && m > 0.05) m *= 0.8;
+    let inside, rest;
+    if (smart) {
+      const [i, r] = await smartParts(target, shape, m);
+      inside = pack(i, br, target);
+      rest = pack(r, br, target);
+    } else {
+      inside = pack(await shot(target, shape, false, m), br, target);
+      rest = pack(await shot(target, shape, true, m), br, target);
+    }
+    if (!inside) {
+      toast('Nothing of that element is inside the outline.');
+      return;
+    }
+    const name = target.name || 'element';
+    const idx = c.getObjects().indexOf(target);
+    c.remove(target);
+    let at = idx;
+    if (rest) {
+      rest.name = name + ' (rest)';
+      c.insertAt(rest, at++);
+    }
+    inside.name = name + ' (cut-out)';
+    c.insertAt(inside, at);
+    c.discardActiveObject();
+    c.setActiveObject(inside);
+    c.requestRenderAll();
+    MS.commit('Crop');
+    T.set('move');
+    toast('Cut in two. Move the piece away, or use either part like any picture.');
+  }
+
+  function cancel() {
+    showTemp(null);
+    start = null;
+    pts = [];
+    moved = false;
+  }
+
+  const common = {
+    lock: true,
+    cursor: 'crosshair',
+    group: 'crop',
+    hint: 'Drag round the part you want to cut out. Hover the Crop button to pick Freehand, Smart edge or a shape · Shift = square / circle · Alt = from centre · Esc = cancel',
+    down(p) {
+      if (busy) return;
+      start = { x: p.x, y: p.y };
+      pts = [start];
+      moved = false;
+    },
+    move(p, e) {
+      if (!start) return;
+      if (loopy(kindOf())) {
+        const l = pts[pts.length - 1];
+        if (Math.hypot(p.x - l.x, p.y - l.y) * S.view.z < 3) return;
+        pts.push({ x: p.x, y: p.y });
+      }
+      moved = true;
+      showTemp(outline(p, e));
+    },
+    up(p, e) {
+      if (!start) return;
+      const shape = moved ? outline(p, e) : null;
+      showTemp(null);
+      if (!shape) {
+        cancel();
+        toast('Drag round the part you want to cut out.');
+        return;
+      }
+      const r = shape.getBoundingRect(true, true);
+      if (r.width < 6 || r.height < 6) {
+        cancel();
+        toast('That outline is too small — drag a bigger one.');
+        return;
+      }
+      const target = targetFor(shape);
+      start = null;
+      pts = [];
+      moved = false;
+      if (!target) {
+        toast('Draw the outline over a picture, shape or text.');
+        return;
+      }
+      busy = true;
+      toast(kindOf() === 'smart' ? 'Finding the edge…' : 'Cutting…', 1500);
+      cutApart(target, shape, kindOf() === 'smart')
+        .catch(err => {
+          console.error(err);
+          toast('Could not cut that element.');
+        })
+        .finally(() => (busy = false));
+    },
+    exit: cancel,
+    optionsHtml() {
+      const k = kindOf();
+      return `<div class="og"><span class="opt-pill">${k === 'free' ? 'Freehand' : k === 'smart' ? 'Smart edge' : label(k)}</span></div>
+      <div class="og hint">${k === 'smart' ? 'Loop loosely round the subject, a little outside its edge: the cut snaps to the real edge' : 'Drag round what you want to cut out'} · hover the Crop button on the left to change the shape · <kbd>Esc</kbd> cancels</div>`;
+    },
+  };
+  [['free', 'crop'], ['smart', 'wand'], ...KINDS.map(k => [k, (T.defs[k] || {}).icon || 'crop'])].forEach(([k, icon]) =>
+    T.reg({
+      ...common,
+      id: 'crop:' + k,
+      cropKind: k,
+      icon,
+      key: k === 'free' ? 'C' : '',
+      label: k === 'free' ? 'Crop: freehand' : k === 'smart' ? 'Crop: smart edge' : 'Crop: ' + label(k).toLowerCase(),
+    })
+  );
+
+  window.addEventListener(
+    'keydown',
+    e => {
+      if (e.key === 'Escape' && S.tool.startsWith('crop:') && start) {
+        e.stopPropagation();
+        cancel();
+      }
+    },
+    true
+  );
+})();
+
+;
+/* js/silhouette.js */
+/* Imagination Studio - Silhouette maker.
+   Select a picture, click the Silhouette tool: the picture's contrast is stretched and read in one of nine styles (solid subject,
+   hard contrast, soft cut-paper, clean stencil, three / four tones, line art, halftone dots, scan lines). Every style is shown live on
+   your own picture so you can see what you want, then a Level (how much turns to ink), ink colour, paper colour and invert are fine-tuned.
+   "Solid subject" uses the smart edge finder (js/smartcut.js) - or the picture's own transparency when it has some.
+   Make it adds the result as a new picture on top; the original is hidden (it can be kept visible). */
+(function () {
+  'use strict';
+  const MS = window.MS,
+    S = MS.S;
+  const { $, $$, esc, toast, clamp } = MS;
+  const T = MS.tools;
+  if (!T) return;
+  const cv = () => MS.canvas;
+
+  const STYLES = [
+    ['subject', 'Solid subject'],
+    ['solid', 'Hard contrast'],
+    ['soft', 'Soft cut-paper'],
+    ['stencil', 'Clean stencil'],
+    ['tones3', 'Three tones'],
+    ['tones4', 'Four tones'],
+    ['lines', 'Line art'],
+    ['halftone', 'Halftone dots'],
+    ['scan', 'Scan lines'],
+  ];
+  const LEVELS = [
+    ['Lightest', -60],
+    ['Light', -30],
+    ['Medium', 0],
+    ['Dark', 30],
+    ['Darkest', 60],
+  ];
+
+  /* ---------- pixel helpers ---------- */
+  function blurU8(src, w, h, r) {
+    if (r < 1) return src.slice();
+    const tmp = new Uint8Array(w * h),
+      out = new Uint8Array(w * h),
+      d = 2 * r + 1;
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      let sum = 0;
+      for (let x = -r; x <= r; x++) sum += src[o + clamp(x, 0, w - 1)];
+      for (let x = 0; x < w; x++) {
+        tmp[o + x] = sum / d;
+        sum += src[o + Math.min(x + r + 1, w - 1)] - src[o + Math.max(x - r, 0)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let y = -r; y <= r; y++) sum += tmp[clamp(y, 0, h - 1) * w + x];
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = sum / d;
+        sum += tmp[Math.min(y + r + 1, h - 1) * w + x] - tmp[Math.max(y - r, 0) * w + x];
+      }
+    }
+    return out;
+  }
+  // flip every blob (of ink or of paper) smaller than minA pixels: removes specks and plugs pin-holes
+  function cleanSmall(b, w, h, minA) {
+    const seen = new Uint8Array(w * h),
+      q = new Int32Array(w * h);
+    for (let s = 0; s < b.length; s++) {
+      if (seen[s]) continue;
+      const v = b[s];
+      let head = 0,
+        tail = 0;
+      q[tail++] = s;
+      seen[s] = 1;
+      while (head < tail) {
+        const p = q[head++],
+          x = p % w,
+          y = (p / w) | 0;
+        if (x > 0 && !seen[p - 1] && b[p - 1] === v) ((seen[p - 1] = 1), (q[tail++] = p - 1));
+        if (x < w - 1 && !seen[p + 1] && b[p + 1] === v) ((seen[p + 1] = 1), (q[tail++] = p + 1));
+        if (y > 0 && !seen[p - w] && b[p - w] === v) ((seen[p - w] = 1), (q[tail++] = p - w));
+        if (y < h - 1 && !seen[p + w] && b[p + w] === v) ((seen[p + w] = 1), (q[tail++] = p + w));
+      }
+      if (tail < minA) for (let k = 0; k < tail; k++) b[q[k]] = v ? 0 : 1;
+    }
+    return b;
+  }
+  const canvasOf = (w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  };
+
+  /* ---------- reading the picture: contrast stretch + automatic threshold ---------- */
+  function prep(src, max) {
+    const k = Math.min(1, max / Math.max(src.width, src.height)),
+      w = Math.max(1, Math.round(src.width * k)),
+      h = Math.max(1, Math.round(src.height * k)),
+      n = w * h;
+    const canvas = canvasOf(w, h),
+      x = canvas.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(src, 0, 0, w, h);
+    const rgba = x.getImageData(0, 0, w, h).data,
+      g = new Uint8Array(n),
+      op = new Uint8Array(n),
+      hist = new Float64Array(256);
+    let opaque = 0;
+    for (let i = 0; i < n; i++) {
+      const j = i * 4;
+      g[i] = 0.299 * rgba[j] + 0.587 * rgba[j + 1] + 0.114 * rgba[j + 2];
+      if (rgba[j + 3] >= 20) {
+        op[i] = 1;
+        opaque++;
+        hist[g[i]]++;
+      }
+    }
+    const hasAlpha = opaque < n * 0.97;
+    let lo = 0,
+      hi = 255,
+      acc = 0;
+    for (let v = 0; v < 256; v++) {
+      acc += hist[v];
+      if (acc >= opaque * 0.02) {
+        lo = v;
+        break;
+      }
+    }
+    acc = 0;
+    for (let v = 255; v >= 0; v--) {
+      acc += hist[v];
+      if (acc >= opaque * 0.02) {
+        hi = v;
+        break;
+      }
+    }
+    if (hi - lo < 12) ((lo = 0), (hi = 255));
+    const sh = new Float64Array(256);
+    for (let i = 0; i < n; i++) {
+      const v = clamp(Math.round(((g[i] - lo) * 255) / (hi - lo)), 0, 255);
+      g[i] = v;
+      if (op[i]) sh[v]++;
+    }
+    // Otsu: the grey level that best splits dark from light
+    let sum = 0;
+    for (let v = 0; v < 256; v++) sum += v * sh[v];
+    let wB = 0,
+      sB = 0,
+      best = 0,
+      otsu = 128;
+    for (let v = 0; v < 256; v++) {
+      wB += sh[v];
+      if (!wB) continue;
+      const wF = opaque - wB;
+      if (!wF) break;
+      sB += v * sh[v];
+      const d = sB / wB - (sum - sB) / wF,
+        bt = wB * wF * d * d;
+      if (bt > best) ((best = bt), (otsu = v));
+    }
+    return { w, h, n, rgba, g, op, hasAlpha, otsu, canvas, seg: null };
+  }
+
+  /* ---------- the nine styles: each returns how much ink (0-255) every pixel gets ---------- */
+  function subject(P) {
+    if (P.hasAlpha) return blurU8(Uint8Array.from(P.op, v => (v ? 255 : 0)), P.w, P.h, 1);
+    if (!P.seg) {
+      const a = MS.smart.work(P.canvas, 480),
+        inside = new Uint8Array(a.w * a.h),
+        ring = Math.max(2, Math.round(Math.min(a.w, a.h) * 0.04));
+      // no outline to go on: the picture's top and sides are background, the middle is the subject, the rest is decided by colour
+      const core = new Uint8Array(a.w * a.h);
+      for (let y = 0; y < a.h; y++)
+        for (let x = 0; x < a.w; x++) {
+          const i = y * a.w + x;
+          inside[i] = x >= ring && y >= ring && x < a.w - ring ? 1 : 0;
+          core[i] = x > a.w * 0.4 && x < a.w * 0.6 && y > a.h * 0.35 && y < a.h * 0.65 ? 1 : 0;
+        }
+      const m = MS.smart.mask(a.data, a.w, a.h, inside, { core }),
+        mc = MS.smart.maskCanvas(m, a.w, a.h, P.w, P.h),
+        d = mc.getContext('2d').getImageData(0, 0, P.w, P.h).data;
+      P.seg = new Uint8Array(P.n);
+      for (let i = 0; i < P.n; i++) P.seg[i] = d[i * 4 + 3];
+    }
+    return P.seg;
+  }
+  function ink(P, style, level) {
+    const { w, h, n, g, op } = P,
+      thr = clamp(P.otsu + level, 6, 249),
+      out = new Uint8Array(n),
+      big = Math.max(w, h);
+    if (style === 'subject') return subject(P);
+    if (style === 'solid') {
+      for (let i = 0; i < n; i++) out[i] = op[i] && g[i] < thr ? 255 : 0;
+    } else if (style === 'soft') {
+      const b = blurU8(blurU8(g, w, h, Math.round(big / 180) + 1), w, h, Math.round(big / 180) + 1);
+      for (let i = 0; i < n; i++) out[i] = op[i] ? clamp(((thr + 9 - b[i]) / 18) * 255, 0, 255) : 0;
+    } else if (style === 'stencil') {
+      const bin = new Uint8Array(n);
+      for (let i = 0; i < n; i++) bin[i] = op[i] && g[i] < thr ? 1 : 0;
+      cleanSmall(bin, w, h, Math.max(4, Math.round(n * 0.0006)));
+      const f = Uint8Array.from(bin, v => (v ? 255 : 0)),
+        b = blurU8(f, w, h, 1);
+      for (let i = 0; i < n; i++) out[i] = b[i];
+    } else if (style === 'tones3' || style === 'tones4') {
+      const b = blurU8(g, w, h, 1),
+        cuts = style === 'tones3' ? [0.6, 1.25] : [0.5, 0.9, 1.3],
+        amt = style === 'tones3' ? [255, 140, 0] : [255, 190, 105, 0];
+      for (let i = 0; i < n; i++) {
+        if (!op[i]) continue;
+        let k = 0;
+        while (k < cuts.length && b[i] >= thr * cuts[k]) k++;
+        out[i] = amt[k];
+      }
+    } else if (style === 'lines') {
+      const b = blurU8(g, w, h, Math.max(1, Math.round(big / 400))),
+        th = clamp(55 - level * 0.5, 8, 140);
+      for (let y = 1; y < h - 1; y++)
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x,
+            gx = b[i - w + 1] + 2 * b[i + 1] + b[i + w + 1] - b[i - w - 1] - 2 * b[i - 1] - b[i + w - 1],
+            gy = b[i + w - 1] + 2 * b[i + w] + b[i + w + 1] - b[i - w - 1] - 2 * b[i - w] - b[i - w + 1];
+          if (op[i]) out[i] = clamp(((Math.hypot(gx, gy) / 4 - th) / (th * 0.6 + 1)) * 255, 0, 255);
+        }
+      if (P.hasAlpha)
+        for (let y = 1; y < h - 1; y++)
+          for (let x = 1; x < w - 1; x++) {
+            const i = y * w + x;
+            if (op[i] && (!op[i - 1] || !op[i + 1] || !op[i - w] || !op[i + w])) out[i] = 255;
+          }
+    } else {
+      // halftone dots / scan lines: drawn, then the drawing's alpha is read back as ink
+      const c = canvasOf(w, h),
+        x = c.getContext('2d', { willReadFrequently: true });
+      x.fillStyle = '#000';
+      const dark = (m, cover) => (cover < 0.3 ? 0 : clamp((((255 - m) - (255 - thr)) / 255) * 1.7 + 0.5, 0, 1));
+      if (style === 'halftone') {
+        const cell = Math.max(5, Math.round(big / 55));
+        for (let cy = 0; cy < h; cy += cell)
+          for (let cx = 0; cx < w; cx += cell) {
+            let s = 0,
+              k = 0,
+              tot = 0;
+            for (let y = cy; y < Math.min(h, cy + cell); y++)
+              for (let xx = cx; xx < Math.min(w, cx + cell); xx++) {
+                tot++;
+                if (op[y * w + xx]) ((s += g[y * w + xx]), k++);
+              }
+            const d = dark(k ? s / k : 255, k / tot);
+            if (d <= 0.02) continue;
+            x.beginPath();
+            x.arc(cx + cell / 2, cy + cell / 2, cell * 0.78 * Math.sqrt(d), 0, Math.PI * 2);
+            x.fill();
+          }
+      } else {
+        const pitch = Math.max(4, Math.round(big / 70));
+        for (let by = 0; by < h; by += pitch)
+          for (let cx = 0; cx < w; cx += 2) {
+            let s = 0,
+              k = 0,
+              tot = 0;
+            for (let y = by; y < Math.min(h, by + pitch); y++)
+              for (let xx = cx; xx < Math.min(w, cx + 2); xx++) {
+                tot++;
+                if (op[y * w + xx]) ((s += g[y * w + xx]), k++);
+              }
+            const d = dark(k ? s / k : 255, k / tot);
+            if (d > 0.02) x.fillRect(cx, by + (pitch * (1 - d * 0.95)) / 2, 2, pitch * d * 0.95);
+          }
+      }
+      const d = x.getImageData(0, 0, w, h).data;
+      for (let i = 0; i < n; i++) out[i] = d[i * 4 + 3];
+    }
+    return out;
+  }
+
+  const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  // ink amounts -> a picture: ink colour on transparent (or on a paper colour)
+  function paint(P, style, o) {
+    const a = ink(P, style, o.level),
+      { w, h, n, op } = P,
+      c = canvasOf(w, h),
+      x = c.getContext('2d'),
+      d = x.createImageData(w, h),
+      I = hex(o.ink),
+      Pp = o.paper ? hex(o.paper) : null;
+    for (let i = 0; i < n; i++) {
+      let v = a[i];
+      if (o.invert) v = op[i] ? 255 - v : 0;
+      const j = i * 4;
+      if (Pp) {
+        const t = v / 255;
+        d.data[j] = Pp[0] + (I[0] - Pp[0]) * t;
+        d.data[j + 1] = Pp[1] + (I[1] - Pp[1]) * t;
+        d.data[j + 2] = Pp[2] + (I[2] - Pp[2]) * t;
+        d.data[j + 3] = 255;
+      } else {
+        d.data[j] = I[0];
+        d.data[j + 1] = I[1];
+        d.data[j + 2] = I[2];
+        d.data[j + 3] = v;
+      }
+    }
+    x.putImageData(d, 0, 0);
+    return c;
+  }
+
+  /* ---------- the picture to work on ---------- */
+  function sourceObj() {
+    const c = cv();
+    let a = c.getActiveObject();
+    if (a && (a.type === 'activeSelection' || a.__isBackground)) a = null;
+    if (!a) {
+      const imgs = c.getObjects().filter(o => o.type === 'image' && o.visible && !o.__isBackground);
+      if (imgs.length === 1) a = imgs[0];
+    }
+    return a;
+  }
+
+  /* ---------- the dialog ---------- */
+  let openApi = null;
+  function open() {
+    if (openApi) return;
+    const target = sourceObj();
+    if (!target) {
+      toast('Select a picture first, then click the Silhouette maker.');
+      return;
+    }
+    const br = target.getBoundingRect(true, true);
+    let m = target.type === 'image' ? 1 / Math.max(0.01, Math.min(Math.abs(target.scaleX), Math.abs(target.scaleY))) : 2;
+    m = clamp(m, 0.25, 4);
+    while (Math.max(br.width, br.height) * m > 3000 && m > 0.05) m *= 0.8;
+    let src;
+    try {
+      src = target.toCanvasElement({ multiplier: m, enableRetinaScaling: false, withoutShadow: true });
+    } catch (e) {
+      console.error(e);
+      toast('Could not read that picture.');
+      return;
+    }
+    const o = Object.assign({ style: 'subject', level: 0, ink: '#111111', paper: null, invert: false, keep: false }, MS.store.get('silhouette', {}) || {});
+    if (!STYLES.some(s => s[0] === o.style)) o.style = 'subject';
+    let paperOn = !!o.paper,
+      paperCol = o.paper || '#ffffff';
+    const small = prep(src, 150),
+      mid = prep(src, 360);
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="sil-wrap">
+        <div class="sil-big"><canvas id="silBig"></canvas></div>
+        <div class="sil-grid">${STYLES.map(([k, n]) => `<button class="sil-th" data-k="${k}" title="${esc(n)}"><canvas></canvas><span>${esc(n)}</span></button>`).join('')}</div>
+      </div>
+      <div class="sil-ctl">
+        <div class="r"><label>Level</label><span class="chips" id="silChips">${LEVELS.map(([n, v]) => `<span class="chip" data-v="${v}">${n}</span>`).join('')}</span></div>
+        <div class="r"><label>Fine-tune</label><input type="range" id="silLevel" min="-80" max="80" value="${o.level}" class="grow"><div class="f" style="width:64px"><input type="number" id="silLevelN" min="-80" max="80" value="${o.level}"></div></div>
+        <div class="r"><label>Ink colour</label><span class="swatch-in"><input type="color" id="silInk" value="${o.ink}"></span>
+          <label class="chk"><input type="checkbox" id="silPaperOn" ${paperOn ? 'checked' : ''}> Paper colour</label><span class="swatch-in"><input type="color" id="silPaper" value="${paperCol}"></span>
+          <label class="chk"><input type="checkbox" id="silInv" ${o.invert ? 'checked' : ''}> Invert</label>
+          <label class="chk"><input type="checkbox" id="silKeep" ${o.keep ? 'checked' : ''}> Keep original visible</label></div>
+        <div class="hint">Pick the style that looks right on your picture, then choose how dark it goes. "Solid subject" cuts the subject out and fills it flat.</div>
+      </div>`;
+    openApi = MS.modal({
+      title: 'Silhouette maker',
+      wide: true,
+      body,
+      onClose: () => (openApi = null),
+      buttons: [{ spacer: true }, { label: 'Cancel' }, { label: 'Make silhouette', primary: true, id: 'silGo', keepOpen: true, action: make }],
+    });
+    const opts = () => ({ level: o.level, ink: o.ink, paper: paperOn ? paperCol : null, invert: o.invert });
+    let timer = 0;
+    function draw() {
+      const op = opts();
+      $$('.sil-th', body).forEach(b => {
+        const k = b.dataset.k,
+          cnv = b.querySelector('canvas'),
+          r = paint(small, k, op);
+        cnv.width = r.width;
+        cnv.height = r.height;
+        cnv.getContext('2d').drawImage(r, 0, 0);
+        b.classList.toggle('active', k === o.style);
+      });
+      const big = $('#silBig', body),
+        r = paint(mid, o.style, op);
+      big.width = r.width;
+      big.height = r.height;
+      big.getContext('2d').drawImage(r, 0, 0);
+      $$('#silChips .chip', body).forEach(c => c.classList.toggle('active', +c.dataset.v === o.level));
+    }
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(draw, 60);
+      MS.store.set('silhouette', { style: o.style, level: o.level, ink: o.ink, paper: paperOn ? paperCol : null, invert: o.invert, keep: o.keep });
+    };
+    $('.sil-grid', body).addEventListener('click', e => {
+      const b = e.target.closest('.sil-th');
+      if (!b) return;
+      o.style = b.dataset.k;
+      soon();
+    });
+    const setLevel = v => {
+      o.level = clamp(Math.round(+v) || 0, -80, 80);
+      $('#silLevel', body).value = o.level;
+      $('#silLevelN', body).value = o.level;
+      soon();
+    };
+    $('#silChips', body).addEventListener('click', e => {
+      const c = e.target.closest('.chip');
+      if (c) setLevel(c.dataset.v);
+    });
+    $('#silLevel', body).addEventListener('input', e => setLevel(e.target.value));
+    $('#silLevelN', body).addEventListener('change', e => setLevel(e.target.value));
+    $('#silInk', body).addEventListener('input', e => ((o.ink = e.target.value), soon()));
+    $('#silPaper', body).addEventListener('input', e => {
+      paperCol = e.target.value;
+      paperOn = $('#silPaperOn', body).checked = true;
+      soon();
+    });
+    $('#silPaperOn', body).addEventListener('change', e => ((paperOn = e.target.checked), soon()));
+    $('#silInv', body).addEventListener('change', e => ((o.invert = e.target.checked), soon()));
+    $('#silKeep', body).addEventListener('change', e => ((o.keep = e.target.checked), soon()));
+    draw();
+
+    function make() {
+      const go = $('#silGo');
+      go.disabled = true;
+      go.textContent = 'Working…';
+      setTimeout(() => {
+        try {
+          const c = cv(),
+            P = prep(src, 3000),
+            r = paint(P, o.style, opts());
+          const img = new fabric.Image(r, {
+            left: br.left,
+            top: br.top,
+            originX: 'left',
+            originY: 'top',
+            scaleX: br.width / r.width,
+            scaleY: br.height / r.height,
+          });
+          img.name = (target.name || 'picture') + ' silhouette';
+          const idx = c.getObjects().indexOf(target);
+          if (!o.keep) {
+            target.visible = false;
+            target.dirty = true;
+          }
+          c.discardActiveObject();
+          c.insertAt(img, idx + 1);
+          c.setActiveObject(img);
+          c.requestRenderAll();
+          MS.commit('Silhouette');
+          openApi && openApi.close();
+          toast('Silhouette made. The original picture is hidden underneath' + (o.keep ? ' (kept visible)' : '') + '.', 4000);
+        } catch (e) {
+          console.error(e);
+          go.disabled = false;
+          go.textContent = 'Make silhouette';
+          toast('Could not make the silhouette.');
+        }
+      }, 30);
+    }
+  }
+
+  T.reg({
+    id: 'silhouette',
+    label: 'Silhouette maker',
+    icon: 'silhouette',
+    key: '',
+    action: true,
+    run: open,
+    hint: 'Select a picture, then click to turn it into a silhouette-style picture (pick a style and level)',
+  });
+  MS.silhouette = { open };
 })();
 
 ;
@@ -20599,7 +21631,11 @@ document.addEventListener('DOMContentLoaded', () => {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '');
-  const fileSafe = s => String(s || '').replace(/[^\w .-]+/g, '').replace(/\s+/g, ' ').trim();
+  const fileSafe = s =>
+    String(s || '')
+      .replace(/[^\w .-]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   const longDate = d => new Date(d || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const CS = (MS.consult = {});
@@ -20615,7 +21651,13 @@ document.addEventListener('DOMContentLoaded', () => {
       v: 1,
       id: newId('c'),
       customer: { name: '', email: '' },
-      studio: { name: me.studio || 'Imagination Studio', designer: me.designer || '', email: me.email || '', whatsapp: me.whatsapp || '', logo: me.logo || '' },
+      studio: {
+        name: me.studio || 'Imagination Studio',
+        designer: me.designer || '',
+        email: me.email || '',
+        whatsapp: me.whatsapp || '',
+        logo: me.logo || '',
+      },
       project: { name: S.doc && S.doc.name && !/^untitled/i.test(S.doc.name) ? S.doc.name : '', outline: '', requirements: [] },
       theme: { accent: '#ff7a2b', primary: '#5a63ff' },
       rounds: [{ n: 1, date: Date.now(), message: '', ideas: [], response: null }],
@@ -20623,7 +21665,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const round = () => C.rounds[C.rounds.length - 1];
   const rememberMe = () =>
-    MS.store.set('consultDesigner', { studio: C.studio.name, designer: C.studio.designer, email: C.studio.email, whatsapp: C.studio.whatsapp, logo: C.studio.logo });
+    MS.store.set('consultDesigner', {
+      studio: C.studio.name,
+      designer: C.studio.designer,
+      email: C.studio.email,
+      whatsapp: C.studio.whatsapp,
+      logo: C.studio.logo,
+    });
   const waDigits = s => String(s || '').replace(/\D+/g, '');
 
   /* pictures are shrunk so the customer's file stays email sized */
@@ -20658,7 +21706,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isLocal() && C.customer.name) {
       try {
         const r = await fetch(
-          'save?dir=customer&sub=' + encodeURIComponent(slug(C.customer.name) || 'customer') + '&name=' + encodeURIComponent(name) + (overwrite ? '&overwrite=1' : ''),
+          'save?dir=customer&sub=' +
+            encodeURIComponent(slug(C.customer.name) || 'customer') +
+            '&name=' +
+            encodeURIComponent(name) +
+            (overwrite ? '&overwrite=1' : ''),
           { method: 'POST', headers: H, body: blob }
         );
         if (r.ok) {
@@ -20693,7 +21745,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   function adopt(j) {
-    if (!j || j.type !== 'imagination-consult' || !Array.isArray(j.rounds) || !j.rounds.length) throw new Error('That is not a consultation file.');
+    if (!j || j.type !== 'imagination-consult' || !Array.isArray(j.rounds) || !j.rounds.length)
+      throw new Error('That is not a consultation file.');
     C = j;
     dirty = false;
     C.customer = C.customer || { name: '', email: '' };
@@ -20724,14 +21777,27 @@ document.addEventListener('DOMContentLoaded', () => {
       id: C.id,
       round: r.n,
       date: longDate(),
-      studio: { name: C.studio.name, logo: C.studio.logo, email: C.studio.email, whatsapp: waDigits(C.studio.whatsapp), designer: C.studio.designer },
+      studio: {
+        name: C.studio.name,
+        logo: C.studio.logo,
+        email: C.studio.email,
+        whatsapp: waDigits(C.studio.whatsapp),
+        designer: C.studio.designer,
+      },
       customer: C.customer,
       project: C.project,
       message: r.message || '',
       theme: C.theme,
       music: await assetFor(forLink, 'music.mp3', 'consult-music.mp3'),
       logoVideo: await assetFor(forLink, 'logo.mp4', 'consult-logo.mp4'),
-      ideas: r.ideas.map((i, k) => ({ id: i.id, title: 'Inspiration No ' + (k + 1), note: i.note, img: i.img, from: i.from || '', prev: i.prev || '' })),
+      ideas: r.ideas.map((i, k) => ({
+        id: i.id,
+        title: 'Inspiration No ' + (k + 1),
+        note: i.note,
+        img: i.img,
+        from: i.from || '',
+        prev: i.prev || '',
+      })),
     };
     const bs = String.fromCharCode(92); // JSON-safe escapes so the data can sit inside a <script> tag
     const json = JSON.stringify(data)
@@ -20745,7 +21811,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const miss = [];
     if (!C.customer.name.trim()) miss.push('the customer name');
     if (!C.project.name.trim()) miss.push('the project name');
-    if (!/^\S+@\S+\.\S+$/.test(C.studio.email.trim()) && waDigits(C.studio.whatsapp).length < 8) miss.push('your WhatsApp number or email address (where their reply goes)');
+    if (!/^\S+@\S+\.\S+$/.test(C.studio.email.trim()) && waDigits(C.studio.whatsapp).length < 8)
+      miss.push('your WhatsApp number or email address (where their reply goes)');
     if (!round().ideas.length) miss.push('at least one idea picture');
     return miss;
   }
@@ -20773,10 +21840,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function emailBody() {
     const first = C.customer.name.trim().split(/\s+/)[0] || 'there';
     return (
-      'Hello ' + first + ',\n\nI\'ve put together my latest ideas for "' + C.project.name + '" (round ' + round().n + ').\n\n' +
+      'Hello ' +
+      first +
+      ',\n\nI\'ve put together my latest ideas for "' +
+      C.project.name +
+      '" (round ' +
+      round().n +
+      ').\n\n' +
       'Open the attached file in your web browser (Chrome, Edge, Safari). It starts with a short personal slideshow, then you can tell me what you think of each idea: ' +
       'love it, not for me, or see more like this, with room for your comments. When you are done, press "Submit project feedback" at the bottom and it will come straight back to me.\n\n' +
-      'Best wishes,\n' + (C.studio.designer || C.studio.name)
+      'Best wishes,\n' +
+      (C.studio.designer || C.studio.name)
     );
   }
   const subject = () => C.project.name + ' - design ideas for you (round ' + round().n + ')';
@@ -20814,7 +21888,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function emailIt(blob) {
     const body = document.createElement('div');
     body.innerHTML =
-      '<p>Your customer file is saved. Two ways to send it to <b>' + esc(C.customer.email || 'the customer') + '</b>:</p>' +
+      '<p>Your customer file is saved. Two ways to send it to <b>' +
+      esc(C.customer.email || 'the customer') +
+      '</b>:</p>' +
       '<div class="cs-steps"><div><b>Outlook / Windows Mail:</b> press <i>Email with file attached</i>, open the message that is saved, press Send.</div>' +
       '<div><b>Any other email app:</b> press <i>Open email</i>, then attach <span class="cs-file"></span> from the folder it was saved to.</div></div>' +
       '<div class="hint">A web page cannot attach a file to an email by itself, so one of those two steps is needed. Your customer\'s reply is different: their Submit button does it for them.</div>';
@@ -20830,7 +21906,13 @@ document.addEventListener('DOMContentLoaded', () => {
           label: 'Open email',
           keepOpen: true,
           action: () => {
-            location.href = 'mailto:' + encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent(subject()) + '&body=' + encodeURIComponent(emailBody());
+            location.href =
+              'mailto:' +
+              encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') +
+              '?subject=' +
+              encodeURIComponent(subject()) +
+              '&body=' +
+              encodeURIComponent(emailBody());
           },
         },
         {
@@ -20873,7 +21955,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function pasteReply() {
     const body = document.createElement('div');
     body.innerHTML =
-      '<p>Copy the customer\'s WhatsApp message and paste it here, all of it, including the long code at the end.</p>' +
+      "<p>Copy the customer's WhatsApp message and paste it here, all of it, including the long code at the end.</p>" +
       '<textarea id="csPaste" rows="8" style="width:100%" placeholder="Paste the message here"></textarea>';
     MS.modal({
       title: 'Paste a reply',
@@ -20928,7 +22010,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const linkMessage = url => {
     const first = C.customer.name.trim().split(/\s+/)[0] || 'there';
-    return 'Hello ' + first + ', I\'ve put together some design ideas for "' + C.project.name + '" just for you. Open this and tell me what you think: ' + url;
+    return (
+      'Hello ' +
+      first +
+      ', I\'ve put together some design ideas for "' +
+      C.project.name +
+      '" just for you. Open this and tell me what you think: ' +
+      url
+    );
   };
   async function linkCall(path, token, blob) {
     const r = await fetch(path + '?token=' + token, { method: 'POST', headers: H, body: blob });
@@ -20994,11 +22083,18 @@ document.addEventListener('DOMContentLoaded', () => {
       msg = linkMessage(url),
       body = document.createElement('div');
     body.innerHTML =
-      '<p>Your private link for <b>' + esc(C.customer.name) + '</b> (round ' + r.n + '):</p>' +
-      '<input type="text" readonly id="csUrl" style="width:100%" value="' + esc(url) + '">' +
+      '<p>Your private link for <b>' +
+      esc(C.customer.name) +
+      '</b> (round ' +
+      r.n +
+      '):</p>' +
+      '<input type="text" readonly id="csUrl" style="width:100%" value="' +
+      esc(url) +
+      '">' +
       '<div class="cs-live" id="csLive">GitHub is putting the page online, this takes about a minute…</div>' +
       '<div class="hint">Send it any way you like. When they press Submit it comes back to you on ' +
-      (waDigits(C.studio.whatsapp).length >= 8 ? 'WhatsApp' : 'email') + '. Close the link afterwards.</div>';
+      (waDigits(C.studio.whatsapp).length >= 8 ? 'WhatsApp' : 'email') +
+      '. Close the link afterwards.</div>';
     const dlg = MS.modal({
       title: 'Send ' + (C.customer.name.split(/\s+/)[0] || 'the customer') + ' their link',
       body,
@@ -21010,7 +22106,13 @@ document.addEventListener('DOMContentLoaded', () => {
           label: 'Email',
           keepOpen: true,
           action: () => {
-            location.href = 'mailto:' + encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') + '?subject=' + encodeURIComponent(subject()) + '&body=' + encodeURIComponent(msg);
+            location.href =
+              'mailto:' +
+              encodeURIComponent(C.customer.email || '').replace(/%40/g, '@') +
+              '?subject=' +
+              encodeURIComponent(subject()) +
+              '&body=' +
+              encodeURIComponent(msg);
           },
         },
         {
@@ -21035,19 +22137,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // a new GitHub Pages address takes a little while to appear: check until it answers
     let tries = 0;
     const poll = async () => {
-      if (!dlg.el.isConnected || ++tries > 40) return;
+      if (!dlg.el.isConnected || ++tries > 80) return;
       try {
-        const x = await fetch(url, { cache: 'no-store' });
-        if (x.ok) {
+        // the page's security policy does not allow github.io, so the local server checks for us
+        const x = await (await fetch('consult-live?token=' + r.link.token, { headers: H, cache: 'no-store' })).json();
+        if (x.live) {
           const l = $('#csLive', body);
           l.textContent = 'Live. The link works now.';
           l.classList.add('on');
           return;
         }
       } catch (e) {}
-      setTimeout(poll, 5000);
+      setTimeout(poll, 3000);
     };
-    setTimeout(poll, 4000);
+    setTimeout(poll, 1500);
   }
   function nextRound() {
     const r = round(),
@@ -21057,7 +22160,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const by = {};
     (res.items || []).forEach(x => (by[x.id] = x));
     (res.inspiration || []).forEach(p =>
-      next.ideas.push({ id: newId('i'), title: p.caption ? p.caption.slice(0, 60) : 'Your inspiration', note: '', img: p.img, from: 'customer', prev: '' })
+      next.ideas.push({
+        id: newId('i'),
+        title: p.caption ? p.caption.slice(0, 60) : 'Your inspiration',
+        note: '',
+        img: p.img,
+        from: 'customer',
+        prev: '',
+      })
     );
     r.ideas.forEach(i => {
       const x = by[i.id];
@@ -21072,7 +22182,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ---------------- the dialog ---------------- */
   const input = (id, label, val, ph, type) =>
-    '<div class="cs-f"><label for="' + id + '">' + label + '</label><input type="' + (type || 'text') + '" id="' + id + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '" spellcheck="false"></div>';
+    '<div class="cs-f"><label for="' +
+    id +
+    '">' +
+    label +
+    '</label><input type="' +
+    (type || 'text') +
+    '" id="' +
+    id +
+    '" value="' +
+    esc(val) +
+    '" placeholder="' +
+    esc(ph || '') +
+    '" spellcheck="false"></div>';
 
   function render() {
     if (!api) return;
@@ -21083,44 +22205,131 @@ document.addEventListener('DOMContentLoaded', () => {
     const history = C.rounds.slice(0, -1);
     b.innerHTML =
       '<div class="cs-sec"><h3>The customer</h3><div class="cs-row">' +
-      input('csCName', 'Customer name', C.customer.name, 'Mary Corsie') + input('csCMail', 'Customer email', C.customer.email, 'mary@example.com', 'email') + '</div>' +
-      '<div class="cs-row">' + input('csProj', 'Project name', C.project.name, 'Elvis tribute hoodie') + '</div>' +
-      '<div class="cs-f"><label for="csOut">Project outline</label><textarea id="csOut" rows="3" placeholder="The vision in a few sentences, in your customer\'s own language.">' + esc(C.project.outline) + '</textarea></div>' +
-      '<div class="cs-f"><label for="csReq">Customer requirements <span class="cs-dim">(one per line)</span></label><textarea id="csReq" rows="4" placeholder="Black heavyweight hoodie&#10;Gold and white palette">' + esc((C.project.requirements || []).join('\n')) + '</textarea></div></div>' +
+      input('csCName', 'Customer name', C.customer.name, 'Mary Corsie') +
+      input('csCMail', 'Customer email', C.customer.email, 'mary@example.com', 'email') +
+      '</div>' +
+      '<div class="cs-row">' +
+      input('csProj', 'Project name', C.project.name, 'Elvis tribute hoodie') +
+      '</div>' +
+      '<div class="cs-f"><label for="csOut">Project outline</label><textarea id="csOut" rows="3" placeholder="The vision in a few sentences, in your customer\'s own language.">' +
+      esc(C.project.outline) +
+      '</textarea></div>' +
+      '<div class="cs-f"><label for="csReq">Customer requirements <span class="cs-dim">(one per line)</span></label><textarea id="csReq" rows="4" placeholder="Black heavyweight hoodie&#10;Gold and white palette">' +
+      esc((C.project.requirements || []).join('\n')) +
+      '</textarea></div></div>' +
       '<div class="cs-sec"><h3>From you</h3><div class="cs-row">' +
-      input('csStudio', 'Studio name', C.studio.name, 'Imagination Studio') + input('csDes', 'Your name', C.studio.designer, 'Chris') + '</div>' +
-      '<div class="cs-row">' + input('csWa', 'Your WhatsApp number (replies come here)', C.studio.whatsapp || '', '447700900123 (with country code)') +
-      input('csMail', 'Your email (optional backup)', C.studio.email, 'you@example.com', 'email') + '</div>' +
+      input('csStudio', 'Studio name', C.studio.name, 'Imagination Studio') +
+      input('csDes', 'Your name', C.studio.designer, 'Chris') +
+      '</div>' +
+      '<div class="cs-row">' +
+      input('csWa', 'Your WhatsApp number (replies come here)', C.studio.whatsapp || '', '447700900123 (with country code)') +
+      input('csMail', 'Your email (optional backup)', C.studio.email, 'you@example.com', 'email') +
+      '</div>' +
       '<div class="cs-row"><div class="cs-f"><label>Your logo <span class="cs-dim">(optional)</span></label><div class="cs-logo"><span id="csLogoBox"></span><button class="btn sm" id="csLogoBtn">Choose…</button><button class="btn sm" id="csLogoClr">Clear</button></div></div></div>' +
-      '<div class="cs-row"><div class="cs-f"><label>Colours</label><div class="cs-colors"><span class="swatch-in"><input type="color" id="csAcc" value="' + esc(C.theme.accent) + '"></span> accent <span class="swatch-in"><input type="color" id="csPri" value="' + esc(C.theme.primary) + '"></span> main</div></div></div></div>' +
-      '<div class="cs-sec"><h3>Round ' + r.n + ' <span class="cs-dim">· ideas for the customer</span></h3>' +
-      '<div class="cs-f"><label for="csMsg">Personal note (shown in the slideshow and at the top of the form)</label><textarea id="csMsg" rows="3" placeholder="Mary, I\'ve explored three directions…">' + esc(r.message) + '</textarea></div>' +
+      '<div class="cs-row"><div class="cs-f"><label>Colours</label><div class="cs-colors"><span class="swatch-in"><input type="color" id="csAcc" value="' +
+      esc(C.theme.accent) +
+      '"></span> accent <span class="swatch-in"><input type="color" id="csPri" value="' +
+      esc(C.theme.primary) +
+      '"></span> main</div></div></div></div>' +
+      '<div class="cs-sec"><h3>Round ' +
+      r.n +
+      ' <span class="cs-dim">· ideas for the customer</span></h3>' +
+      '<div class="cs-f"><label for="csMsg">Personal note (shown in the slideshow and at the top of the form)</label><textarea id="csMsg" rows="3" placeholder="Mary, I\'ve explored three directions…">' +
+      esc(r.message) +
+      '</textarea></div>' +
       (r.link && r.link.url
-        ? '<div class="cs-linkrow ' + (r.link.closed ? 'closed' : '') + '"><b>' + (r.link.closed ? 'Link closed' : 'Link is open') + '</b> <span class="cs-dim">' + esc(r.link.url) + '</span>' +
-          (r.link.closed ? '' : '<button class="btn sm" id="csLinkShow">Send / copy</button><button class="btn sm danger" id="csLinkClose">Close link</button>') + '</div>'
+        ? '<div class="cs-linkrow ' +
+          (r.link.closed ? 'closed' : '') +
+          '"><b>' +
+          (r.link.closed ? 'Link closed' : 'Link is open') +
+          '</b> <span class="cs-dim">' +
+          esc(r.link.url) +
+          '</span>' +
+          (r.link.closed
+            ? ''
+            : '<button class="btn sm" id="csLinkShow">Send / copy</button><button class="btn sm danger" id="csLinkClose">Close link</button>') +
+          '</div>'
         : '') +
       '<div class="cs-ideas">' +
-      r.ideas.map((i, k) =>
-        '<div class="cs-idea" data-k="' + k + '"><div class="cs-pic"><img src="' + esc(i.img) + '" alt=""><span class="cs-no">No ' + (k + 1) + '</span>' +
-        (i.from === 'customer' ? '<span class="cs-tag">Their inspiration</span>' : '') +
-        (picked[i.id] && picked[i.id].choice ? '<span class="cs-badge ' + picked[i.id].choice + '">' + CHOICE[picked[i.id].choice] + '</span>' : '') + '</div>' +
-        '<input type="text" class="cs-title" placeholder="Private label (customer sees: Inspiration No ' + (k + 1) + ')" value="' + esc(i.title) + '" spellcheck="false">' +
-        '<textarea class="cs-note" rows="2" placeholder="Your note to the customer">' + esc(i.note) + '</textarea>' +
-        (picked[i.id] && picked[i.id].comment ? '<div class="cs-said">“' + esc(picked[i.id].comment) + '”</div>' : '') +
-        '<div class="cs-ctl"><button class="ib" data-mv="-1" data-tip="Move earlier">' + MS.icon('chevl') + '</button><button class="ib" data-mv="1" data-tip="Move later">' + MS.icon('chevr') + '</button><span class="grow"></span><button class="ib" data-del data-tip="Remove">' + MS.icon('trash') + '</button></div></div>'
-      ).join('') +
-      '<div class="cs-add"><button class="btn" id="csAddDesign">' + MS.icon('plus') + 'Add the open design</button><button class="btn" id="csAddPics">' + MS.icon('image') + 'Add pictures…</button></div></div></div>' +
+      r.ideas
+        .map(
+          (i, k) =>
+            '<div class="cs-idea" data-k="' +
+            k +
+            '"><div class="cs-pic"><img src="' +
+            esc(i.img) +
+            '" alt=""><span class="cs-no">No ' +
+            (k + 1) +
+            '</span>' +
+            (i.from === 'customer' ? '<span class="cs-tag">Their inspiration</span>' : '') +
+            (picked[i.id] && picked[i.id].choice
+              ? '<span class="cs-badge ' + picked[i.id].choice + '">' + CHOICE[picked[i.id].choice] + '</span>'
+              : '') +
+            '</div>' +
+            '<input type="text" class="cs-title" placeholder="Private label (customer sees: Inspiration No ' +
+            (k + 1) +
+            ')" value="' +
+            esc(i.title) +
+            '" spellcheck="false">' +
+            '<textarea class="cs-note" rows="2" placeholder="Your note to the customer">' +
+            esc(i.note) +
+            '</textarea>' +
+            (picked[i.id] && picked[i.id].comment ? '<div class="cs-said">“' + esc(picked[i.id].comment) + '”</div>' : '') +
+            '<div class="cs-ctl"><button class="ib" data-mv="-1" data-tip="Move earlier">' +
+            MS.icon('chevl') +
+            '</button><button class="ib" data-mv="1" data-tip="Move later">' +
+            MS.icon('chevr') +
+            '</button><span class="grow"></span><button class="ib" data-del data-tip="Remove">' +
+            MS.icon('trash') +
+            '</button></div></div>'
+        )
+        .join('') +
+      '<div class="cs-add"><button class="btn" id="csAddDesign">' +
+      MS.icon('plus') +
+      'Add the open design</button><button class="btn" id="csAddPics">' +
+      MS.icon('image') +
+      'Add pictures…</button></div></div></div>' +
       (res
-        ? '<div class="cs-sec cs-reply"><h3>' + esc(res.customer.name || 'Customer') + '\'s reply <span class="cs-dim">· round ' + r.n + '</span></h3>' +
-          '<div class="cs-sum">' + ['love', 'more', 'no'].map(c => '<span class="cs-badge ' + c + '">' + (res.items || []).filter(x => x.choice === c).length + ' ' + CHOICE[c] + '</span>').join('') + '</div>' +
+        ? '<div class="cs-sec cs-reply"><h3>' +
+          esc(res.customer.name || 'Customer') +
+          '\'s reply <span class="cs-dim">· round ' +
+          r.n +
+          '</span></h3>' +
+          '<div class="cs-sum">' +
+          ['love', 'more', 'no']
+            .map(
+              c => '<span class="cs-badge ' + c + '">' + (res.items || []).filter(x => x.choice === c).length + ' ' + CHOICE[c] + '</span>'
+            )
+            .join('') +
+          '</div>' +
           (res.extra ? '<div class="cs-said"><b>Anything else:</b> ' + esc(res.extra) + '</div>' : '') +
-          ((res.inspiration || []).length ? '<div class="cs-said"><b>' + res.inspiration.length + ' picture(s) of their own</b> will be added at the start of the next round.</div>' : '') +
+          ((res.inspiration || []).length
+            ? '<div class="cs-said"><b>' +
+              res.inspiration.length +
+              ' picture(s) of their own</b> will be added at the start of the next round.</div>'
+            : '') +
           '<div class="hint">Their comments show under each idea above.</div>' +
-          '<div><button class="btn primary" id="csNext">Start round ' + (r.n + 1) + ' from this reply</button></div></div>'
+          '<div><button class="btn primary" id="csNext">Start round ' +
+          (r.n + 1) +
+          ' from this reply</button></div></div>'
         : '') +
       (history.length
         ? '<div class="cs-sec"><h3>Earlier rounds</h3>' +
-          history.map(h => '<div class="hint">Round ' + h.n + ' · ' + longDate(h.date) + ' · ' + h.ideas.length + ' ideas' + (h.response ? ' · reply received ' + longDate(Date.parse(h.response.sentAt)) : ' · no reply imported') + '</div>').join('') + '</div>'
+          history
+            .map(
+              h =>
+                '<div class="hint">Round ' +
+                h.n +
+                ' · ' +
+                longDate(h.date) +
+                ' · ' +
+                h.ideas.length +
+                ' ideas' +
+                (h.response ? ' · reply received ' + longDate(Date.parse(h.response.sentAt)) : ' · no reply imported') +
+                '</div>'
+            )
+            .join('') +
+          '</div>'
         : '');
     bind(b);
     window.MSI.hydrate(b);
@@ -21137,7 +22346,16 @@ document.addEventListener('DOMContentLoaded', () => {
     on('csCMail', e => ((C.customer.email = e.target.value), (dirty = true)));
     on('csProj', e => ((C.project.name = e.target.value), (dirty = true)));
     on('csOut', e => ((C.project.outline = e.target.value), (dirty = true)));
-    on('csReq', e => ((C.project.requirements = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)), (dirty = true)));
+    on(
+      'csReq',
+      e => (
+        (C.project.requirements = e.target.value
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean)),
+        (dirty = true)
+      )
+    );
     on('csStudio', e => ((C.studio.name = e.target.value), (dirty = true)));
     on('csDes', e => ((C.studio.designer = e.target.value), (dirty = true)));
     on('csMail', e => ((C.studio.email = e.target.value), (dirty = true)));
@@ -21149,9 +22367,11 @@ document.addEventListener('DOMContentLoaded', () => {
     on('csMsg', e => ((round().message = e.target.value), (dirty = true)));
     on('csAcc', e => ((C.theme.accent = e.target.value), (dirty = true)));
     on('csPri', e => ((C.theme.primary = e.target.value), (dirty = true)));
-    const logo = () => ($('#csLogoBox', b).innerHTML = C.studio.logo ? '<img src="' + esc(C.studio.logo) + '" alt="">' : '<span class="cs-dim">none</span>');
+    const logo = () =>
+      ($('#csLogoBox', b).innerHTML = C.studio.logo ? '<img src="' + esc(C.studio.logo) + '" alt="">' : '<span class="cs-dim">none</span>');
     logo();
-    $('#csLogoBtn', b).onclick = () => pick(false, async f => ((C.studio.logo = await shrinkImage(await fileToURL(f[0]), 600, 0.9)), logo(), (dirty = true)));
+    $('#csLogoBtn', b).onclick = () =>
+      pick(false, async f => ((C.studio.logo = await shrinkImage(await fileToURL(f[0]), 600, 0.9)), logo(), (dirty = true)));
     $('#csLogoClr', b).onclick = () => ((C.studio.logo = ''), logo(), (dirty = true));
     $('#csAddPics', b).onclick = () =>
       pick(true, async fs => {
@@ -21210,12 +22430,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const body = document.createElement('div');
     body.innerHTML =
       '<p>Build a beautiful, personal consultation for a customer: their brief, your latest ideas, and a feedback form they fill in and send straight back. Each round builds on the last.</p>' +
-      '<div><button class="btn primary" id="csNew">' + MS.icon('plus') + 'New consultation</button> <button class="btn" id="csOpenFile">' + MS.icon('open') + 'Open a consultation file…</button></div>' +
-      (C ? '<div><button class="btn" id="csCont">Continue with ' + esc(C.customer.name || 'the open consultation') + '</button></div>' : '') +
+      '<div><button class="btn primary" id="csNew">' +
+      MS.icon('plus') +
+      'New consultation</button> <button class="btn" id="csOpenFile">' +
+      MS.icon('open') +
+      'Open a consultation file…</button></div>' +
+      (C
+        ? '<div><button class="btn" id="csCont">Continue with ' + esc(C.customer.name || 'the open consultation') + '</button></div>'
+        : '') +
       (saved.length
         ? '<h3 class="cs-h">Saved customers</h3><div class="cs-saved">' +
-          saved.sort((a, b) => b.modified - a.modified).map(s => '<button class="btn" data-sub="' + esc(s.sub) + '">' + esc(s.sub.replace(/_/g, ' ')) + '</button>').join('') + '</div>'
-        : '<div class="hint">' + (isLocal() ? 'No saved consultations yet.' : 'Consultations are saved as a file you keep. Open them again with "Open a consultation file".') + '</div>');
+          saved
+            .sort((a, b) => b.modified - a.modified)
+            .map(s => '<button class="btn" data-sub="' + esc(s.sub) + '">' + esc(s.sub.replace(/_/g, ' ')) + '</button>')
+            .join('') +
+          '</div>'
+        : '<div class="hint">' +
+          (isLocal()
+            ? 'No saved consultations yet.'
+            : 'Consultations are saved as a file you keep. Open them again with "Open a consultation file".') +
+          '</div>');
     const dlg = MS.modal({ title: 'Client consultation', body, med: true, buttons: [{ spacer: true }, { label: 'Close' }] });
     const go = () => (dlg.close(), openEditor());
     $('#csNew', body).onclick = () => ((C = blank()), go());
@@ -21265,6 +22499,710 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   CS.open = () => !api && startScreen();
   CS._state = () => C; // for tests
+})();
+
+;
+/* js/master.js */
+/* Imagination Studio - Master projects.
+   File > New master project (or the start page) opens a naming page. A master project is one folder per customer job with the same
+   filing system inside every time: Consultations, Assets, Live work in progress, Customer communication.
+   Add a folder of your own and you are asked whether to copy it into ALL master projects, so every project's filing stays identical.
+   Runs through the local server (MERCH\master-projects\) or, on the web version, in a folder you pick on this PC. */
+(function () {
+  'use strict';
+  const MS = window.MS;
+  const { $, $$, esc, toast } = MS;
+  const H = { 'X-Merch-Studio': '1' };
+  const DEFAULTS = ['Consultations', 'Assets', 'Live work in progress', 'Customer communication'];
+  const isLocal = () => /^https?:$/.test(location.protocol) && ['localhost', '127.0.0.1'].includes(location.hostname);
+  const clean = s => {
+    const t = String(s || '')
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\.+$/, '');
+    return t && !/^[._]/.test(t) && t.length <= 80 ? t : '';
+  };
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+  /* ---------- where the folders live ---------- */
+  // 1) the local server: MERCH\master-projects\<project>\<folders>
+  // the server answers JSON; anything else means this window is still running the older server (it has to be closed and started again)
+  async function call(url, opt) {
+    let r, t;
+    try {
+      r = await fetch(url, { ...opt, headers: H, cache: 'no-store' });
+      t = await r.text();
+    } catch (e) {
+      throw new Error('Could not reach the Imagination Studio server. Is its window still open?');
+    }
+    try {
+      return JSON.parse(t);
+    } catch (e) {
+      throw new Error(
+        'The Imagination Studio server does not know about master projects yet. Close its black window, start Imagination Studio again from "Start Imagination Studio", then try once more.'
+      );
+    }
+  }
+  const server = {
+    name: 'server',
+    async list() {
+      const j = await call('master-list');
+      if (!j.ok) throw new Error(j.error || 'The server could not list master projects.');
+      return { template: j.template, projects: j.projects, where: j.root };
+    },
+    async create(name, folders) {
+      const j = await call('master-create', { method: 'POST', body: JSON.stringify({ name, folders }) });
+      if (!j.ok) throw new Error(j.error || 'Could not create the project.');
+      return j.path;
+    },
+    async addAll(folder) {
+      const j = await call('master-folder?name=' + encodeURIComponent(folder), { method: 'POST' });
+      if (!j.ok) throw new Error(j.error || 'Could not add the folder.');
+      return j.projects;
+    },
+  };
+  // 2) the web version: a folder the user picks (the parent that holds the master projects). The standard folder set is remembered in the browser.
+  let rootHandle = null;
+  const local = {
+    name: 'folder',
+    async root() {
+      if (rootHandle) return rootHandle;
+      if (!window.showDirectoryPicker) throw new Error('This browser cannot create folders. Use Chrome or Edge, or start Imagination Studio with its launcher on this PC.');
+      rootHandle = await window.showDirectoryPicker({ id: 'imagination-master', mode: 'readwrite' });
+      return rootHandle;
+    },
+    tpl: () => MS.store.get('masterTemplate', null) || DEFAULTS.slice(),
+    async list() {
+      const h = await this.root(),
+        projects = [];
+      for await (const [n, e] of h.entries()) {
+        if (e.kind !== 'directory' || /^[._]/.test(n)) continue;
+        const folders = [];
+        for await (const [fn, fe] of e.entries()) if (fe.kind === 'directory') folders.push(fn);
+        projects.push({ name: n, folders });
+      }
+      projects.sort((a, b) => a.name.localeCompare(b.name));
+      return { template: this.tpl(), projects, where: h.name };
+    },
+    async create(name, folders) {
+      const h = await this.root();
+      try {
+        await h.getDirectoryHandle(name);
+        throw new Error('A master project with that name already exists.');
+      } catch (e) {
+        if (e.name !== 'NotFoundError') throw e;
+      }
+      const d = await h.getDirectoryHandle(name, { create: true });
+      for (const f of folders) await d.getDirectoryHandle(f, { create: true });
+      return h.name + '\\' + name;
+    },
+    async addAll(folder) {
+      const h = await this.root(),
+        t = this.tpl();
+      if (!t.some(x => same(x, folder))) MS.store.set('masterTemplate', [...t, folder]);
+      let n = 0;
+      for await (const [pn, e] of h.entries()) {
+        if (e.kind !== 'directory' || /^[._]/.test(pn)) continue;
+        await e.getDirectoryHandle(folder, { create: true });
+        n++;
+      }
+      return n;
+    },
+  };
+  const backend = () => (isLocal() ? server : local);
+
+  /* ---------- the naming page ---------- */
+  let openApi = null;
+  function open() {
+    if (openApi) return;
+    const be = backend();
+    let info = { template: DEFAULTS.slice(), projects: [], where: '' },
+      extras = [],
+      loaded = false;
+    const body = document.createElement('div');
+    openApi = MS.modal({
+      title: 'New master project',
+      med: true,
+      body,
+      onClose: () => (openApi = null),
+      buttons: [{ spacer: true }, { label: 'Close' }, { label: 'Create master project', primary: true, id: 'mpGo', keepOpen: true, action: create }],
+    });
+    const folders = () => [...info.template, ...extras];
+
+    async function load() {
+      try {
+        info = await be.list();
+        loaded = true;
+      } catch (e) {
+        if (e && e.name === 'AbortError') {
+          openApi && openApi.close();
+          return;
+        }
+        body.innerHTML = `<div class="hint" style="color:var(--bad,#ff8a8a)">${esc(e.message || e)}</div>`;
+        return;
+      }
+      draw();
+    }
+    function draw() {
+      const keepName = $('#mpName', body) ? $('#mpName', body).value : '';
+      body.innerHTML = `
+        <div class="cs-f"><label>Master project name</label><input type="text" id="mpName" class="grow" placeholder="e.g. Smith Plumbing rebrand" spellcheck="false" maxlength="80" value="${esc(keepName)}"></div>
+        <div class="mp-h">Folders created inside it <span class="hint">same for every project</span></div>
+        <div class="mp-folders">${folders()
+          .map(
+            (f, i) =>
+              `<span class="mp-f ${i >= info.template.length ? 'extra' : ''}">${MS.icon('folder')}${esc(f)}${i >= info.template.length ? `<button class="mp-x" data-x="${i - info.template.length}" data-tip="Remove from this project">×</button>` : ''}</span>`
+          )
+          .join('')}</div>
+        <div class="r mp-add"><input type="text" id="mpNew" class="grow" placeholder="Add another empty folder…" spellcheck="false" maxlength="80"><button class="btn sm" id="mpAdd">${MS.icon('plus')}Add folder</button></div>
+        <div class="mp-h">Existing master projects <span class="hint">${esc(info.where || '')}</span></div>
+        <div class="mp-list">${
+          info.projects.length
+            ? info.projects.map(p => `<div class="mp-p">${MS.icon('folder')}<b>${esc(p.name)}</b><span class="hint">${p.folders.length} folders</span></div>`).join('')
+            : '<div class="hint">None yet.</div>'
+        }</div>`;
+      window.MSI.hydrate(body);
+      const nm = $('#mpName', body);
+      nm.focus();
+      nm.addEventListener('keydown', e => e.key === 'Enter' && create());
+      $('#mpAdd', body).addEventListener('click', addFolder);
+      $('#mpNew', body).addEventListener('keydown', e => e.key === 'Enter' && addFolder());
+      $$('.mp-x', body).forEach(b =>
+        b.addEventListener('click', () => {
+          extras.splice(+b.dataset.x, 1);
+          draw();
+        })
+      );
+    }
+    function addFolder() {
+      const inp = $('#mpNew', body),
+        f = clean(inp.value);
+      if (!f) {
+        toast('Type a folder name first.');
+        return;
+      }
+      if (folders().some(x => same(x, f))) {
+        toast('That folder is already in the list.');
+        return;
+      }
+      // keep every project's filing identical: ask before the folder goes anywhere
+      MS.modal({
+        title: 'Copy to all master projects?',
+        sticky: true,
+        noClose: true,
+        body: `<p>Add the empty folder <b>${esc(f)}</b> to <b>every</b> master project${info.projects.length ? ` (${info.projects.length} existing)` : ''} and to all new ones, so the filing system stays the same everywhere?</p>
+          <p class="hint">Choose "Only this project" to add it just to the one you are creating now.</p>`,
+        buttons: [
+          { spacer: true },
+          { label: 'Cancel' },
+          {
+            label: 'Only this project',
+            action: () => {
+              extras.push(f);
+              draw();
+            },
+          },
+          {
+            label: 'Yes, copy to all',
+            primary: true,
+            keepOpen: true,
+            action: async (api, btn) => {
+              btn.disabled = true;
+              try {
+                const n = await be.addAll(f);
+                api.close();
+                info = await be.list();
+                draw();
+                toast(`"${f}" added to ${n} master project${n === 1 ? '' : 's'} and to every new one.`, 3500);
+              } catch (e) {
+                btn.disabled = false;
+                toast(e.message || 'Could not add the folder.');
+              }
+            },
+          },
+        ],
+      });
+    }
+    async function create() {
+      if (!loaded) return;
+      const name = clean($('#mpName', body).value);
+      if (!name) {
+        toast('Give the master project a name first.');
+        $('#mpName', body).focus();
+        return;
+      }
+      if (info.projects.some(p => same(p.name, name))) {
+        toast('A master project with that name already exists.');
+        return;
+      }
+      const go = $('#mpGo');
+      go.disabled = true;
+      try {
+        const where = await be.create(name, folders());
+        openApi && openApi.close();
+        toast(`Master project "${name}" created${where ? ' in ' + where : ''}.`, 4500);
+      } catch (e) {
+        go.disabled = false;
+        toast(e.message || 'Could not create the master project.');
+      }
+    }
+    body.innerHTML = '<div class="hint">Loading…</div>';
+    load();
+  }
+
+  MS.master = { open };
+})();
+
+;
+/* js/promote.js */
+/* Imagination Studio - Promote Imagination.
+   Sends the promo film to someone as a private link, the same way a client consultation does: the page is put online at its own
+   address (serve.ps1 /consult-publish) and you send the link by WhatsApp or email. Close the link and it goes offline again.
+   The promo itself is assets/promo-pack.html: one self-contained file with a spot for the personal details, and a copyable app link at the end. */
+(function () {
+  'use strict';
+  const MS = window.MS;
+  const { $, $$, esc, toast } = MS;
+  const H = { 'X-Merch-Studio': '1' };
+  const KEY = 'promoLinks';
+  const isLocal = () => /^https?:$/.test(location.protocol) && ['localhost', '127.0.0.1'].includes(location.hostname);
+  const waDigits = s => String(s || '').replace(/\D+/g, '');
+  const first = s =>
+    String(s || '')
+      .trim()
+      .split(/\s+/)[0];
+  const newToken = () => {
+    const a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    return [...a].map(x => (x % 36).toString(36)).join('') + Date.now().toString(36);
+  };
+  const longDate = d => new Date(d || Date.now()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  // the public address of the app: what the promo's last slide offers as the download link
+  const defaultAppUrl = () =>
+    isLocal() ? 'https://chrisllm2wmd-prog.github.io/imagination-studio/' : location.origin + location.pathname.replace(/[^/]*$/, '');
+
+  const P = (MS.promote = {});
+  let links = MS.store.get(KEY, []) || [];
+  let me = null,
+    api = null;
+  const saveLinks = () => MS.store.set(KEY, links.slice(-30));
+  const loadMe = () => {
+    const d = MS.store.get('consultDesigner', {}) || {};
+    const p = MS.store.get('promoMe', {}) || {};
+    return {
+      to: '',
+      toMail: '',
+      designer: d.designer || '',
+      whatsapp: d.whatsapp || '',
+      email: d.email || '',
+      appUrl: p.appUrl || defaultAppUrl(),
+      msg:
+        p.msg ||
+        'Have a look at this short film about Imagination Studio, the design app I use. It shows what it can do and how to get it.',
+    };
+  };
+  const rememberMe = () => {
+    const d = MS.store.get('consultDesigner', {}) || {};
+    MS.store.set('consultDesigner', Object.assign({}, d, { designer: me.designer, whatsapp: me.whatsapp, email: me.email }));
+    MS.store.set('promoMe', { appUrl: me.appUrl, msg: me.msg });
+  };
+
+  /* ---------------- building the personal copy ---------------- */
+  async function buildHtml() {
+    const tpl = await (await fetch('assets/promo-pack.html', { cache: 'no-cache' })).text();
+    const data = {
+      to: me.to.trim(),
+      from: me.designer.trim(),
+      whatsapp: waDigits(me.whatsapp),
+      email: me.email.trim(),
+      appUrl: me.appUrl.trim(),
+    };
+    const bs = String.fromCharCode(92); // JSON-safe escapes so the data can sit inside a <script> tag
+    const json = JSON.stringify(data)
+      .replace(/</g, bs + 'u003c')
+      .replace(new RegExp('[' + String.fromCharCode(8232, 8233) + ']', 'g'), c => bs + 'u' + c.charCodeAt(0).toString(16));
+    const re = /(<script id="promo-data" type="application\/json">)[\s\S]*?(<\/script>)/;
+    if (!re.test(tpl)) throw new Error('The promo template is damaged.');
+    return tpl.replace(re, (m, a, b) => a + json + b);
+  }
+  const check = () => {
+    if (!/^https?:\/\/\S+$/.test(me.appUrl.trim())) return 'Put the web address of the app in "App link on the last slide".';
+    return '';
+  };
+
+  /* ---------------- private link (same system as client consultations) ---------------- */
+  async function linkCall(path, token, blob) {
+    const r = await fetch(path + '?token=' + token, { method: 'POST', headers: H, body: blob });
+    let j = {};
+    try {
+      j = await r.json();
+    } catch (e) {}
+    if (!r.ok || !j.ok) throw new Error(j.error || 'The link could not be made (' + r.status + ').');
+    return j;
+  }
+  const message = url => {
+    const f = first(me.to);
+    return (f ? 'Hello ' + f + ', ' : '') + me.msg.trim() + ' ' + url;
+  };
+  async function createLink() {
+    const bad = check();
+    if (bad) return toast(bad, 5200, 'err');
+    if (!isLocal()) return toast('Links are made from the "Start Imagination Studio" window on your PC.', 6000, 'err');
+    rememberMe();
+    const l = { token: newToken(), url: '', to: me.to.trim(), toMail: me.toMail.trim(), created: Date.now(), closed: 0 };
+    toast('Putting the promo online…', 9000);
+    try {
+      const blob = new Blob([await buildHtml()], { type: 'text/html' });
+      const j = await linkCall('consult-publish', l.token, blob);
+      l.url = j.url;
+      links.push(l);
+      saveLinks();
+      render();
+      sendDialog(l);
+    } catch (e) {
+      console.error(e);
+      toast(String((e && e.message) || e), 7000, 'err');
+    }
+  }
+  async function closeLink(l) {
+    if (!confirm('Close this link? Nobody will be able to open the promo any more.')) return;
+    try {
+      await linkCall('consult-close', l.token);
+      l.closed = Date.now();
+      l.pending = false;
+      updateBadge();
+      saveLinks();
+      render();
+      toast('Link closed. The page is being taken offline.', 5000);
+    } catch (e) {
+      toast(String((e && e.message) || e), 6000, 'err');
+    }
+  }
+  async function downloadFile() {
+    const bad = check();
+    if (bad) return toast(bad, 5200, 'err');
+    rememberMe();
+    try {
+      MS.download(
+        new Blob([await buildHtml()], { type: 'text/html' }),
+        'Imagination Studio promo' + (me.to.trim() ? ' for ' + me.to.trim() : '') + '.html'
+      );
+    } catch (e) {
+      toast('Could not build the promo: ' + ((e && e.message) || e), 6000, 'err');
+    }
+  }
+  function copyText(text, el) {
+    el && el.select && el.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+      () => toast('Link copied.', 2500),
+      () => document.execCommand('copy') && toast('Link copied.', 2500)
+    );
+  }
+  const waUrl = msg => 'https://wa.me/?text=' + encodeURIComponent(msg);
+  /* is the page up yet? The app may not call github.io itself (its security policy only allows this PC), so the local server checks */
+  const isLive = async l => {
+    try {
+      const r = await fetch('consult-live?token=' + l.token, { headers: H, cache: 'no-store' });
+      // an older "Start Imagination Studio" window does not know this check yet (404): GitHub normally finishes within two minutes, so trust the clock
+      if (!r.ok) return Date.now() - (l.created || 0) > 120000;
+      return !!(await r.json()).live;
+    } catch (e) {
+      return Date.now() - (l.created || 0) > 120000;
+    }
+  };
+
+  /* ---------------- waiting for a link to go live, then finishing the WhatsApp send ---------------- */
+  // Send by WhatsApp on a link that is not live yet: the box closes, the link is kept "to send" and a button at the top of the app
+  // (Promote, with a number) shows how many are ready. When one goes live a message appears with a Send button (a click is
+  // needed to open WhatsApp: a browser will not open it by itself). It is kept in the browser, so you can leave and come back.
+  const toSend = () => links.filter(l => l.pending && !l.closed);
+  let btn = null,
+    bar = null,
+    watcher = 0;
+  const updateBadge = () => {
+    if (!btn) return;
+    const all = toSend(),
+      ready = all.filter(l => l.ready).length;
+    btn.hidden = !all.length;
+    btn.classList.toggle('ready', ready > 0);
+    $('.pr-badge', btn).textContent = ready || '…';
+    btn.title = ready
+      ? ready + ' promo link' + (ready === 1 ? ' is' : 's are') + ' ready to send'
+      : 'Waiting for GitHub to publish ' + all.length + ' promo link' + (all.length === 1 ? '' : 's');
+    document.title = document.title.replace(/^\(\d+\) /, '');
+    if (ready) document.title = '(' + ready + ') ' + document.title;
+  };
+  function finishSend(l) {
+    window.open(waUrl(l.text || message(l.url)), '_blank');
+    l.pending = false;
+    l.ready = false;
+    saveLinks();
+    updateBadge();
+    hideBar();
+  }
+  const hideBar = () => {
+    bar && bar.remove();
+    bar = null;
+  };
+  function showReady(l) {
+    hideBar();
+    bar = document.createElement('div');
+    bar.className = 'pr-wait ready';
+    bar.innerHTML =
+      '<span><b>Link ready</b>' +
+      (l.to ? ' for ' + esc(l.to) : '') +
+      '. WhatsApp is waiting to send it.</span><button class="btn sm primary" data-go>Send on WhatsApp</button><button class="btn sm" data-later>Later</button>';
+    document.body.appendChild(bar);
+    $('[data-go]', bar).onclick = () => finishSend(l);
+    $('[data-later]', bar).onclick = hideBar;
+  }
+  async function checkPending() {
+    for (const l of toSend()) {
+      if (l.ready) continue;
+      if (await isLive(l)) {
+        l.ready = true;
+        saveLinks();
+        updateBadge();
+        showReady(l);
+      }
+    }
+    if (!toSend().some(l => !l.ready)) {
+      clearInterval(watcher);
+      watcher = 0;
+    }
+  }
+  const watch = () => {
+    updateBadge();
+    if (!watcher && toSend().some(l => !l.ready)) {
+      watcher = setInterval(checkPending, 3000);
+      checkPending();
+    }
+  };
+  function sendLaterDialog() {
+    const body = document.createElement('div');
+    const draw = () => {
+      const all = toSend();
+      body.innerHTML = all.length
+        ? '<p>Links waiting to be sent by WhatsApp. A link can be sent once it is ready (GitHub takes about a minute to publish it).</p>' +
+          all
+            .map(
+              l =>
+                '<div class="cs-linkrow" data-t="' +
+                l.token +
+                '"><b>' +
+                esc(l.to || 'Anyone') +
+                '</b> <span class="cs-dim">' +
+                (l.ready ? 'Ready to send' : 'Publishing…') +
+                ' · ' +
+                longDate(l.created) +
+                '</span>' +
+                '<button class="btn sm primary" data-go' +
+                (l.ready ? '' : ' disabled') +
+                '>Send on WhatsApp</button><button class="btn sm" data-x>Remove</button></div>'
+            )
+            .join('')
+        : '<p>Nothing waiting to be sent.</p>';
+      $$('.cs-linkrow', body).forEach(row => {
+        const l = links.find(x => x.token === row.dataset.t);
+        $('[data-go]', row).onclick = () => {
+          finishSend(l);
+          draw();
+        };
+        $('[data-x]', row).onclick = () => {
+          l.pending = false;
+          l.ready = false;
+          saveLinks();
+          updateBadge();
+          draw();
+        };
+      });
+    };
+    draw();
+    const dlg = MS.modal({ title: 'Promo links to send', body, med: true, buttons: [{ spacer: true }, { label: 'Close' }] });
+    const t = setInterval(() => (dlg.el.isConnected ? draw() : clearInterval(t)), 3000);
+  }
+  function initBar() {
+    const head = document.querySelector('header');
+    if (!head || btn) return;
+    btn = document.createElement('button');
+    btn.className = 'btn pr-top';
+    btn.hidden = true;
+    btn.innerHTML = '<i data-i="megaphone"></i><span>Promo</span><b class="pr-badge">…</b>';
+    head.insertBefore(btn, head.querySelector('.spacer'));
+    window.MSI && window.MSI.hydrate(btn);
+    btn.onclick = sendLaterDialog;
+    watch();
+  }
+  document.addEventListener('DOMContentLoaded', () => setTimeout(initBar, 0));
+  if (document.readyState !== 'loading') setTimeout(initBar, 0);
+
+  function sendDialog(l) {
+    const msg = message(l.url),
+      body = document.createElement('div');
+    body.innerHTML =
+      '<p>Your private promo link' +
+      (l.to ? ' for <b>' + esc(l.to) + '</b>' : '') +
+      ':</p>' +
+      '<input type="text" readonly id="prUrl" style="width:100%" value="' +
+      esc(l.url) +
+      '">' +
+      '<div class="cs-live" id="prLive">Publishing now, live in about a minute. Press Send by WhatsApp whenever you like: this box closes, and a message and the Promo button at the top tell you when the link is ready to send.</div>' +
+      '<div class="hint">Send it any way you like. Close the link afterwards and the promo goes offline again.</div>';
+    let liveNow = false;
+    const dlg = MS.modal({
+      title: 'Send the promo' + (first(l.to) ? ' to ' + first(l.to) : ''),
+      body,
+      med: true,
+      buttons: [
+        { spacer: true },
+        { label: 'Done' },
+        {
+          label: 'Email',
+          keepOpen: true,
+          action: () => {
+            location.href =
+              'mailto:' +
+              encodeURIComponent(l.toMail || '').replace(/%40/g, '@') +
+              '?subject=' +
+              encodeURIComponent('Imagination Studio') +
+              '&body=' +
+              encodeURIComponent(msg);
+          },
+        },
+        { label: 'Copy link', keepOpen: true, action: () => copyText(l.url, $('#prUrl', body)) },
+        {
+          label: 'Send by WhatsApp',
+          primary: true,
+          action: () => {
+            l.text = msg;
+            if (liveNow) return window.open(waUrl(msg), '_blank');
+            l.pending = true;
+            l.ready = false;
+            saveLinks();
+            watch();
+            toast('We will tell you when the link is ready. Use the Promo button at the top to finish sending.', 6000);
+          },
+        },
+      ],
+    });
+    // a new GitHub Pages address takes about a minute to appear. The buttons work straight away; this only reports when it is live
+    // (the check uses its own throw-away address, so the real link is never asked early)
+    const live = msg => {
+      const e = $('#prLive', body);
+      if (e) {
+        e.textContent = msg;
+        e.classList.add('on');
+      }
+    };
+    let tries = 0;
+    const poll = async () => {
+      if (!dlg.el.isConnected) return;
+      if (++tries > 60) return;
+      if (await isLive(l)) {
+        liveNow = true;
+        return live('Live. The link works now.');
+      }
+      setTimeout(poll, 3000);
+    };
+    setTimeout(poll, 1500);
+  }
+
+  /* ---------------- the dialog ---------------- */
+  const input = (id, label, val, ph, type) =>
+    '<div class="cs-f"><label for="' +
+    id +
+    '">' +
+    label +
+    '</label><input type="' +
+    (type || 'text') +
+    '" id="' +
+    id +
+    '" value="' +
+    esc(val) +
+    '" placeholder="' +
+    esc(ph || '') +
+    '" spellcheck="false"></div>';
+  function render() {
+    if (!api) return;
+    const b = api.body;
+    const open = links.filter(l => !l.closed),
+      shut = links.filter(l => l.closed);
+    b.innerHTML =
+      '<p>Send a short film about Imagination Studio to anyone, as a private link. It ends with a Make an enquiry form (name, email, WhatsApp number, project requirements and preferred contact method) that opens in their WhatsApp or email addressed to you, and a link to get the app. Close the link whenever you like.</p>' +
+      '<div class="cs-sec"><h3>Who is it for</h3><div class="cs-row">' +
+      input('prTo', 'Their name <span class="cs-dim">(optional, shown on the start screen)</span>', me.to, 'Alex') +
+      input('prToMail', 'Their email <span class="cs-dim">(optional)</span>', me.toMail, 'alex@example.com', 'email') +
+      '</div></div>' +
+      '<div class="cs-sec"><h3>From you</h3><div class="cs-row">' +
+      input('prDes', 'Your name', me.designer, 'Chris') +
+      input(
+        'prWa',
+        'Your WhatsApp number <span class="cs-dim">(enquiries arrive here)</span>',
+        me.whatsapp,
+        '447700900123 (with country code)'
+      ) +
+      '</div><div class="cs-row">' +
+      input('prMail', 'Your email <span class="cs-dim">(backup for enquiries)</span>', me.email, 'you@example.com', 'email') +
+      input('prApp', 'App link on the last slide', me.appUrl, 'https://') +
+      '</div><div class="cs-f"><label for="prMsg">Message sent with the link</label><textarea id="prMsg" rows="3">' +
+      esc(me.msg) +
+      '</textarea></div></div>' +
+      (open.length
+        ? '<div class="cs-sec"><h3>Open links</h3>' +
+          open
+            .map(
+              l =>
+                '<div class="cs-linkrow" data-t="' +
+                l.token +
+                '"><b>' +
+                esc(l.to || 'Anyone') +
+                '</b> <span class="cs-dim">' +
+                esc(l.url) +
+                ' · ' +
+                longDate(l.created) +
+                '</span>' +
+                '<button class="btn sm" data-send>Send / copy</button><button class="btn sm danger" data-close>Close link</button></div>'
+            )
+            .join('') +
+          '</div>'
+        : '') +
+      (shut.length ? '<div class="hint">' + shut.length + ' earlier link' + (shut.length === 1 ? '' : 's') + ' closed.</div>' : '');
+    const on = (id, k) => $('#' + id, b).addEventListener('input', e => (me[k] = e.target.value));
+    on('prTo', 'to');
+    on('prToMail', 'toMail');
+    on('prDes', 'designer');
+    on('prWa', 'whatsapp');
+    on('prMail', 'email');
+    on('prApp', 'appUrl');
+    on('prMsg', 'msg');
+    $$('.cs-linkrow', b).forEach(row => {
+      const l = links.find(x => x.token === row.dataset.t);
+      $('[data-send]', row).onclick = () => sendDialog(l);
+      $('[data-close]', row).onclick = () => closeLink(l);
+    });
+  }
+  P.open = () => {
+    if (api) return;
+    me = loadMe();
+    api = MS.modal({
+      title: 'Promote Imagination',
+      body: document.createElement('div'),
+      wide: true,
+      onClose: () => {
+        rememberMe();
+        api = null;
+      },
+      buttons: [
+        { spacer: true },
+        { label: 'Close' },
+        { label: 'Download the promo file', icon: 'export', keepOpen: true, action: downloadFile },
+        { label: 'Create link', primary: true, icon: 'link', keepOpen: true, action: createLink },
+      ],
+    });
+    api.body.classList.add('cs');
+    render();
+  };
 })();
 
 ;
@@ -26526,6 +28464,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
         'Save keeps an editable project; Export makes a picture.',
         'File ▸ Open from saved files shows thumbnails of everything you saved.',
         'File ▸ Client consultation builds a personal slideshow + feedback form to email to a customer.',
+        'File ▸ Promote Imagination sends the promo film to anyone as a private link, by WhatsApp or email.',
         'Browse another folder (such as Downloads) to open files saved by Chrome.',
       ],
       steps: [
@@ -27679,6 +29618,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       <div class="home-side">
         <div class="home-brand"><img class="ic" src="assets/logo-mark.png" alt="" draggable="false"><div><b>Imagination Studio</b><span>Create. Design. Print.  ·  v${window.IMAGINATION_VERSION || ''}</span></div></div>
         <button class="home-new active" id="hmNew">${MS.icon('newdoc')}<span>New design</span></button>
+        <button class="home-new" id="hmMaster">${MS.icon('mproject')}<span>New master project<small>Customer job folders, filed the same every time</small></span></button>
         <button class="home-new" id="hmOpen">${MS.icon('open')}<span>Open project…</span></button>
         ${hasSaved ? `<button class="home-new" id="hmRestore">${MS.icon('history')}<span>Continue last session<small>${MS.esc(saved.payload.meta.name || 'Untitled')} · ${new Date(saved.savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small></span></button>` : ''}
         ${tipsOn ? `<div class="home-tips"><div class="ht-head"><b>Tips</b><button class="ht-x" id="htOff" data-tip="Switch tips off" aria-label="Switch tips off">×</button></div><p class="ht-body">${tip}</p><div class="ht-foot"><span>${(tipIdx % tips.length) + 1} / ${tips.length}</span><button class="btn sm" id="htNext">Next tip ›</button></div></div>` : `<button class="home-tipson" id="htOn">Show tips</button>`}
@@ -27765,6 +29705,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
         };
       $('#ndGo', ov).onclick = create;
       $('#hmOpen', ov).onclick = () => $('#projectLoadInput').click();
+      $('#hmMaster', ov).onclick = () => MS.master && MS.master.open();
       const rs = $('#hmRestore', ov);
       if (rs)
         rs.onclick = () => {
@@ -27937,9 +29878,11 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
             key: matchMedia('(display-mode: standalone)').matches ? 'Ctrl+N' : 'Alt+N',
             action: () => MS.openNewDialog(),
           },
+          { label: 'New master project…', icon: 'mproject', action: () => MS.master && MS.master.open() },
           { label: 'Open project…', icon: 'open', key: 'Ctrl+O', action: () => $('#projectLoadInput').click() },
           { label: 'Open from saved files…', icon: 'folder', key: 'Ctrl+Shift+O', action: () => MS.openFiles() },
           { label: 'Client consultation…', icon: 'sparkle', action: () => MS.consult && MS.consult.open() },
+          { label: 'Promote Imagination…', icon: 'megaphone', action: () => MS.promote && MS.promote.open() },
           { label: 'Import picture / SVG…', icon: 'image', key: 'Ctrl+Shift+I', action: () => $('#fileImportInput').click() },
           '-',
           { label: 'Save project', icon: 'save', key: 'Ctrl+S', action: MS.saveProject },
@@ -28171,6 +30114,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
           ['T', 'Text'],
           ['W', 'Magic wand'],
           ['E', 'Eraser'],
+          ['C', 'Crop (draw round an element)'],
           ['I', 'Eyedropper'],
           ['X', 'Swap fill / stroke'],
           ['Space', 'Hold to pan'],

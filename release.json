@@ -1,11 +1,14 @@
 {
-  "version": "4.27 beta",
-  "date": "2026-10-29",
+  "version": "4.28 beta",
+  "date": "2026-10-30",
   "notes": [
-    "New: Client consultation (File menu). Build a personal page for a customer with their project outline and requirements, your latest design ideas and a note from you.",
-    "Create link puts the page online at a private address and gives you a link to send by WhatsApp, text or email. The customer clicks through a personal slideshow at their own pace, then answers every idea with Love it, Not for me or See more like this, plus comments. At the end they can watch it as a film with the promo tune, and save a copy.",
-    "Their Submit button opens WhatsApp with the whole reply already written to your number. Paste it into the app and the answers fill in on each idea. Email still works as a backup.",
-    "Close link takes the page offline once you have their reply. Start the next round with the loved ideas and their own pictures carried over.",
-    "Needs the Start Imagination Studio window and a one-time GitHub setup. Saved in the customer folder next to the app."
+    "New: Promote Imagination (File menu). Sends a short promo film about the app to anyone as a private link, the same way a client consultation does. Put their name on the start screen, add your WhatsApp and email on the last slide, then send by WhatsApp or email. Close the link when you are done.",
+    "The promo ends with a Make an enquiry form (name, email, WhatsApp number, project requirements, preferred contact method; WhatsApp recommended) that opens a ready-written message to you, plus a copyable link to get the app. It has no version numbers, so it never looks out of date.",
+    "You can also download the personal promo as one file.",
+    "New: Crop tool (C). Draw round part of a picture, shape or text, freehand or with any shape from the same shape menu as the draw tools. The piece you cut out and the part left behind both stay on screen as their own pictures, each with a hit box that follows its shape.",
+    "New: Smart edge in the Crop tool. Loop loosely round a subject and the cut snaps to its real edge.",
+    "New: Silhouette maker (left toolbar). Select a picture and see it in nine silhouette styles on your own photo (solid subject, hard contrast, soft cut-paper, stencil, three and four tones, line art, halftone dots, scan lines), then choose how dark it goes, the ink and paper colours, or invert.",
+    "New: File > New master project (and on the start page). Names a customer job and makes the same set of folders in each one; a folder you add can be copied into every master project.",
+    "The colour box has an eyedropper again to pick a colour from anywhere on screen."
   ]
 }
