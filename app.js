@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.29 beta';
+window.IMAGINATION_VERSION = '4.29.1 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -4705,7 +4705,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   // Save as: pick the name, and (where the browser allows) the exact folder
   MS.saveProjectAs = function () {
-    if (MS.pages && MS.pages.active()) return MS.pages.saveAll(); // inside a master project, every page is saved together
+    if (MS.pages && MS.pages.multi()) return MS.pages.saveAll(); // with more than one page (or in a master project) every page is saved together
     const body = document.createElement('div'),
       safe = n => (n || 'design').replace(/[/:*?"<>|]+/g, '_').trim() || 'design';
     body.innerHTML =
@@ -4770,7 +4770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
   MS.saveProject = function () {
-    if (MS.pages && MS.pages.active()) return MS.pages.saveAll();
+    if (MS.pages && MS.pages.multi()) return MS.pages.saveAll();
     const name = (S.doc.name || 'design').replace(/[\\/:*?"<>|]+/g, '_');
     const blob = new Blob([JSON.stringify(MS.projectPayload())], { type: 'application/json' });
     MS.saveFile(blob, name + '.json').then(msg => {
@@ -22515,8 +22515,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ;
 /* js/pages.js */
-/* Imagination Studio - Pages of a master project.
-   Start in File > New master project opens the job on a blank canvas with a page bar above it:
+/* Imagination Studio - Pages. EVERY design has them (a single design is simply "Page 1 of 1"); a master project is the same pages
+   saved into the client's folder. The page bar sits above the canvas:
    [Save project] [Save page]      < Page 1 of 3 >      [+ New page]
    + New page offers a blank page or Copy page; Copy page (and a click on "Page 1 of 3") opens a swipe gallery of every page,
    the middle one large and the neighbours smaller and see-through.
@@ -22541,11 +22541,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const clone = o => JSON.parse(JSON.stringify(o));
   const uid = () => 'pg' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-  let P = null; // the open master project: { name, projectId, store, cur, busy, pages: [{ id, name, thumb, payload }] }
+  let P = null; // the pages of the design on screen: { name, projectId, store (master project folder, or null), cur, busy, pages: [{ id, name, thumb, payload }] }
   let internal = 0; // > 0 while this file itself is loading a page, so the "a different design was opened" hooks stay quiet
   let bar = null;
 
   /* ---------- the pages ---------- */
+  // a design with no extra pages yet; its name and id simply follow the design on screen
+  function fresh() {
+    P = {
+      name: S.doc.name || 'Untitled design',
+      projectId: S.doc.projectId,
+      store: null,
+      cur: 0,
+      busy: false,
+      pages: [{ id: uid(), name: S.doc.name || 'Untitled design', thumb: null, payload: null }],
+    };
+  }
+  // true once there is more than one page, or the design lives in a master project folder; before that the normal save is used
+  const multi = () => !!P && (!!P.store || P.pages.length > 1);
   function thumb() {
     try {
       const d = S.doc;
@@ -22562,6 +22575,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // put what is on the canvas back into the current page
   function capture() {
     const pg = P.pages[P.cur];
+    if (!multi()) {
+      P.name = S.doc.name || P.name;
+      P.projectId = S.doc.projectId;
+    }
     pg.payload = MS.projectPayload();
     pg.payload.meta.projectId = P.projectId;
     pg.name = S.doc.name || pg.name;
@@ -22612,11 +22629,12 @@ document.addEventListener('DOMContentLoaded', () => {
       extra: {},
     };
   }
-  // pages still called "<job> - page N" are renumbered to where they now sit; a page you renamed yourself keeps its name
+  // pages still called "<job> - page N" (or just "<job>", the first one of a design) are renumbered to where they now sit;
+  // a page you renamed yourself keeps its name
   function renumber() {
     const pre = P.name + ' - page ';
     P.pages.forEach((p, i) => {
-      if (!p.name.startsWith(pre) || !/^\d+$/.test(p.name.slice(pre.length))) return;
+      if (P.pages.length < 2 || (p.name !== P.name && !(p.name.startsWith(pre) && /^\d+$/.test(p.name.slice(pre.length))))) return;
       p.name = pre + (i + 1);
       if (p.payload) p.payload.meta.name = p.name;
       if (i === P.cur && !P.busy) {
@@ -22672,7 +22690,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- starting, opening, leaving ---------- */
   // asks first when the job on screen has changes that were never saved
   function leave(then) {
-    if (!P || !S.dirty) return then();
+    if (!multi() || !S.dirty) return then();
     MS.modal({
       title: 'Unsaved pages',
       med: true,
@@ -22750,14 +22768,14 @@ document.addEventListener('DOMContentLoaded', () => {
       toast(`“${P.name}” opened: ${P.pages.length} page${P.pages.length === 1 ? '' : 's'}.`, 4000);
     });
   }
+  // some other design was started or opened: back to a single page
   function end() {
-    if (!P) return;
-    P = null;
+    fresh();
     paint();
   }
 
   /* ---------- saving ---------- */
-  async function put(name, blob, label) {
+  async function put(name, blob) {
     if (P.store) return P.store.write(JOB_DIR, name, blob);
     return (await MS.saveFile(blob, name)).replace(/^saved (to |as )?/, '');
   }
@@ -22796,19 +22814,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function paint() {
     if (!bar) bar = $('#pageBar');
     if (!bar) return;
-    bar.hidden = !P;
-    document.body.classList.toggle('has-pages', !!P);
-    if (!P) {
-      bar.innerHTML = '';
-      return;
+    bar.hidden = !S.ready;
+    if (!P.store && P.pages.length === 1) {
+      P.name = S.doc.name || P.name;
+      P.projectId = S.doc.projectId;
     }
     const n = P.pages.length,
       dis = P.busy ? 'disabled' : '';
     bar.innerHTML = `
       <div class="pg-l">
-        <span class="pg-job" title="${esc(P.name)}">${MS.icon('folder')}<b>${esc(P.name)}</b></span>
-        <button class="btn sm" id="pgSaveAll" ${dis} data-tip="Save every page of this master project|Ctrl+S">${MS.icon('save')}Save project</button>
-        <button class="btn sm" id="pgSaveOne" ${dis} data-tip="Save only the page you are on, as its own file">Save page</button>
+        ${P.store ? `<span class="pg-job" title="${esc(P.name)}">${MS.icon('folder')}<b>${esc(P.name)}</b></span>` : ''}
+        <button class="btn sm" id="pgSaveAll" ${dis} data-tip="${n > 1 || P.store ? 'Save every page together' : 'Save this design'}|Ctrl+S">${MS.icon('save')}Save project</button>
+        ${n > 1 || P.store ? `<button class="btn sm" id="pgSaveOne" ${dis} data-tip="Save only the page you are on, as its own file">Save page</button>` : ''}
       </div>
       <div class="pg-c">
         <button class="ib" id="pgPrev" ${dis || P.cur === 0 ? 'disabled' : ''} data-tip="Previous page">${MS.icon('chevl')}</button>
@@ -22825,8 +22842,9 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>`;
     const pop = $('#pgPop', bar);
-    $('#pgSaveAll', bar).onclick = saveAll;
-    $('#pgSaveOne', bar).onclick = savePage;
+    $('#pgSaveAll', bar).onclick = () => MS.saveProject();
+    const one = $('#pgSaveOne', bar);
+    if (one) one.onclick = savePage;
     $('#pgPrev', bar).onclick = () => go(P.cur - 1);
     $('#pgNext', bar).onclick = () => go(P.cur + 1);
     $('#pgCount', bar).onclick = () => gallery('go');
@@ -23016,13 +23034,16 @@ document.addEventListener('DOMContentLoaded', () => {
   MS.onNewDoc(() => {
     if (!internal) end();
   });
+  fresh();
+  MS.on('doc', paint);
   window.addEventListener('DOMContentLoaded', paint);
 
   MS.pages = {
     JOB_DIR,
     TYPE,
     jobFile,
-    active: () => !!P,
+    active: multi,
+    multi,
     internal: () => internal > 0,
     start,
     open,
@@ -30509,9 +30530,9 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
           { label: 'Save project', icon: 'save', key: 'Ctrl+S', action: MS.saveProject },
           { label: 'Save project as…', icon: 'save', key: 'Ctrl+Shift+S', action: () => MS.saveProjectAs() },
           {
-            label: 'Save this page (master project)',
+            label: 'Save this page on its own',
             icon: 'save',
-            disabled: () => !(MS.pages && MS.pages.active()),
+            disabled: () => !(MS.pages && MS.pages.multi()),
             action: () => MS.pages.savePage(),
           },
           { label: 'Save selection to assets…', icon: 'save', action: () => MS.groups && MS.groups.saveSelection() },

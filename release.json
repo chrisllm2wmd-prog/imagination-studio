@@ -1,7 +1,8 @@
 {
-  "version": "4.29 beta",
+  "version": "4.29.1 beta",
   "date": "2026-10-31",
   "notes": [
+    "Fixed: Pages are now part of every design, not just master projects. The page bar (Page 1 of 1, New page, Copy page) is always above the canvas. With more than one page, Save project keeps all the pages together in one file; a single page saves as before.",
     "New: Master projects now open on a blank canvas. File > New master project: type the client or project name, pick a page size, click Start. It makes the folder (with Consultations, Assets, Live work in progress, Customer communication inside) and opens the job. Existing jobs have an Open button.",
     "New: Pages. Every master project has a bar above the canvas: Save project and Save page on the left, Page 1 of 3 with arrows in the middle, New page on the right (Blank page or Copy page). Copy page and a click on Page 1 of 3 show all your pages in a swipe gallery: the middle page large, the ones either side smaller and see-through.",
     "New: Save project saves every page together in the job's Live work in progress folder; Save page saves just the page you are on as its own file. Open project and Open from saved files bring a whole master project back.",
