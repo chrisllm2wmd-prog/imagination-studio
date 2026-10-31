@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.28 beta';
+window.IMAGINATION_VERSION = '4.29 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -4645,6 +4645,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ============================== PROJECT LOAD / SAVE ============================== */
   MS.loadProject = function (payload, cb) {
+    if (MS.pages && !MS.pages.internal()) MS.pages.end(); // a design opened from outside the master project's own pages
     const m = payload.meta || {};
     const d = S.doc;
     d.name = m.name || 'Untitled design';
@@ -4691,6 +4692,10 @@ document.addEventListener('DOMContentLoaded', () => {
     r.onload = ev => {
       try {
         const p = JSON.parse(ev.target.result);
+        if (p.type === 'imagination-master-project') {
+          MS.pages.open(p); // a whole master project: every page comes back
+          return;
+        }
         MS.loadProject(p, () => toast('Project opened.'));
       } catch (err) {
         toast('Could not read this project file: ' + err.message, 5000, 'err');
@@ -4700,6 +4705,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   // Save as: pick the name, and (where the browser allows) the exact folder
   MS.saveProjectAs = function () {
+    if (MS.pages && MS.pages.active()) return MS.pages.saveAll(); // inside a master project, every page is saved together
     const body = document.createElement('div'),
       safe = n => (n || 'design').replace(/[/:*?"<>|]+/g, '_').trim() || 'design';
     body.innerHTML =
@@ -4764,6 +4770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
   MS.saveProject = function () {
+    if (MS.pages && MS.pages.active()) return MS.pages.saveAll();
     const name = (S.doc.name || 'design').replace(/[\\/:*?"<>|]+/g, '_');
     const blob = new Blob([JSON.stringify(MS.projectPayload())], { type: 'application/json' });
     MS.saveFile(blob, name + '.json').then(msg => {
@@ -20830,6 +20837,11 @@ document.addEventListener('DOMContentLoaded', () => {
         toast('Could not read that file.', 4000, 'err');
         return;
       }
+      if (j.type === 'imagination-master-project') {
+        MS.pages.open(j);
+        api.close();
+        return;
+      }
       if (j.type === 'merch-studio-group') {
         if (!j.objects) {
           toast('That group file is empty.', 3500, 'err');
@@ -22502,12 +22514,534 @@ document.addEventListener('DOMContentLoaded', () => {
 })();
 
 ;
+/* js/pages.js */
+/* Imagination Studio - Pages of a master project.
+   Start in File > New master project opens the job on a blank canvas with a page bar above it:
+   [Save project] [Save page]      < Page 1 of 3 >      [+ New page]
+   + New page offers a blank page or Copy page; Copy page (and a click on "Page 1 of 3") opens a swipe gallery of every page,
+   the middle one large and the neighbours smaller and see-through.
+   Save project writes every page into one file in <project>\\Live work in progress; Save page writes just the page you are on
+   as an ordinary project file next to it. Each page is a normal project payload (js/core.js MS.projectPayload), so everything
+   inside a page - groups, effects, animation settings - is kept exactly as in a single design. */
+(function () {
+  'use strict';
+  const MS = window.MS,
+    S = MS.S;
+  const { $, $$, esc, toast } = MS;
+  const JOB_DIR = 'Live work in progress';
+  const TYPE = 'imagination-master-project';
+  const safe = n =>
+    String(n || 'page')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\.+$/, '') || 'page';
+  const jobFile = name => safe(name) + '.master.json';
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const uid = () => 'pg' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+  let P = null; // the open master project: { name, projectId, store, cur, busy, pages: [{ id, name, thumb, payload }] }
+  let internal = 0; // > 0 while this file itself is loading a page, so the "a different design was opened" hooks stay quiet
+  let bar = null;
+
+  /* ---------- the pages ---------- */
+  function thumb() {
+    try {
+      const d = S.doc;
+      return MS.renderDataURL({
+        multiplier: 420 / Math.max(d.wPx, d.hPx),
+        background: d.garmentClear ? '#ffffff' : d.garment,
+        format: 'image/jpeg',
+        quality: 0.72,
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+  // put what is on the canvas back into the current page
+  function capture() {
+    const pg = P.pages[P.cur];
+    pg.payload = MS.projectPayload();
+    pg.payload.meta.projectId = P.projectId;
+    pg.name = S.doc.name || pg.name;
+    pg.thumb = thumb();
+  }
+  function load(pg) {
+    internal++;
+    return new Promise(res => {
+      let done = false;
+      const fin = () => {
+        if (done) return;
+        done = true;
+        internal--;
+        res();
+      };
+      setTimeout(fin, 20000); // a damaged page must never leave the bar stuck
+      try {
+        MS.loadProject(clone(pg.payload), fin);
+      } catch (e) {
+        console.error(e);
+        toast('Could not open that page: ' + e.message, 5000, 'err');
+        fin();
+      }
+    });
+  }
+  async function go(i, skipCapture) {
+    if (!P || P.busy || i < 0 || i >= P.pages.length || (i === P.cur && !skipCapture)) return;
+    const dirty = S.dirty;
+    P.busy = true;
+    paint();
+    try {
+      if (!skipCapture) capture();
+      P.cur = i;
+      await load(P.pages[i]);
+    } finally {
+      P.busy = false;
+      S.dirty = dirty;
+      paint();
+    }
+  }
+  // a blank page the same size as the page you are on (and with the same solid background, if there is one)
+  function blankPayload(name) {
+    const b = P.pages[P.cur].payload;
+    return {
+      v: 2,
+      meta: Object.assign({}, b.meta, { name, guides: [] }),
+      canvasJSON: { version: b.canvasJSON.version, objects: clone((b.canvasJSON.objects || []).filter(o => o.__isBackground)) },
+      extra: {},
+    };
+  }
+  // pages still called "<job> - page N" are renumbered to where they now sit; a page you renamed yourself keeps its name
+  function renumber() {
+    const pre = P.name + ' - page ';
+    P.pages.forEach((p, i) => {
+      if (!p.name.startsWith(pre) || !/^\d+$/.test(p.name.slice(pre.length))) return;
+      p.name = pre + (i + 1);
+      if (p.payload) p.payload.meta.name = p.name;
+      if (i === P.cur && !P.busy) {
+        S.doc.name = p.name;
+        $('#docName').value = p.name;
+        MS.updateDocUi();
+      }
+    });
+  }
+  // src: the index of the page to copy, or -1 for a blank page. The new page goes in after the one you are on.
+  async function addPage(src) {
+    if (!P || P.busy) return;
+    capture();
+    const name = P.name + ' - page ' + (P.cur + 2);
+    let pg;
+    if (src >= 0) {
+      const o = P.pages[src];
+      pg = { id: uid(), name, thumb: o.thumb, payload: clone(o.payload) };
+      pg.payload.meta.name = name;
+    } else pg = { id: uid(), name, thumb: null, payload: blankPayload(name) };
+    P.pages.splice(P.cur + 1, 0, pg);
+    renumber();
+    await go(P.cur + 1, true);
+    S.dirty = true;
+    toast(
+      src >= 0
+        ? `Page copied. You are on page ${P.cur + 1} of ${P.pages.length}.`
+        : `Blank page added. You are on page ${P.cur + 1} of ${P.pages.length}.`,
+      3000
+    );
+  }
+  async function removePage(i) {
+    if (!P || P.busy || P.pages.length < 2) return;
+    capture();
+    const wasCur = i === P.cur;
+    P.pages.splice(i, 1);
+    if (i < P.cur) P.cur--;
+    else if (wasCur) P.cur = Math.min(i, P.pages.length - 1);
+    renumber();
+    if (wasCur) {
+      P.busy = true;
+      try {
+        await load(P.pages[P.cur]);
+      } finally {
+        P.busy = false;
+      }
+    }
+    S.dirty = true;
+    paint();
+    toast(`Page removed. ${P.pages.length} page${P.pages.length === 1 ? '' : 's'} left.`, 3000);
+  }
+
+  /* ---------- starting, opening, leaving ---------- */
+  // asks first when the job on screen has changes that were never saved
+  function leave(then) {
+    if (!P || !S.dirty) return then();
+    MS.modal({
+      title: 'Unsaved pages',
+      med: true,
+      sticky: true,
+      body: `<p>“${esc(P.name)}” has changes that are not saved yet. Opening another job now would lose them.</p>`,
+      buttons: [
+        { label: 'Cancel' },
+        { spacer: true },
+        {
+          label: 'Save project, then continue',
+          primary: true,
+          action: async () => {
+            await saveAll();
+            then();
+          },
+        },
+        { label: 'Continue without saving', danger: true, action: then },
+      ],
+    });
+  }
+  // the start page (when New master project was clicked there) gives way to the canvas
+  function closeHome() {
+    const h = $('#home');
+    if (h && h.__close) h.__close();
+  }
+  function start(o) {
+    leave(() => {
+      closeHome();
+      const z = o.size || { mode: 'print', w: 12, h: 12 },
+        name = o.name + ' - page 1';
+      internal++;
+      try {
+        if (z.mode === 'print') MS.newDoc({ name, kind: 'logo', mode: 'print', wIn: z.w, hIn: z.h, target: 'print' });
+        else MS.newDoc({ name, kind: 'logo', mode: 'social', wPx: z.w, hPx: z.h, target: 'print' });
+        MS.setGarment('#ffffff', true);
+        MS.setWorkspace('logo');
+      } finally {
+        internal--;
+      }
+      P = {
+        name: o.name,
+        projectId: S.doc.projectId,
+        store: o.store || null,
+        cur: 0,
+        busy: false,
+        pages: [{ id: uid(), name, thumb: null, payload: null }],
+      };
+      S.dirty = false;
+      paint();
+    });
+  }
+  function open(data, store) {
+    if (!data || !Array.isArray(data.pages) || !data.pages.length || !data.pages.every(p => p && p.payload && p.payload.canvasJSON)) {
+      toast('That file is not a master project I can read.', 4500, 'err');
+      return;
+    }
+    leave(async () => {
+      closeHome();
+      P = {
+        name: data.name || 'Master project',
+        projectId: data.projectId || 'p' + Date.now().toString(36),
+        store: store || null,
+        cur: Math.min(Math.max(+data.cur || 0, 0), data.pages.length - 1),
+        busy: true,
+        pages: data.pages.map(p => ({ id: p.id || uid(), name: p.name || 'Page', thumb: p.thumb || null, payload: p.payload })),
+      };
+      paint();
+      try {
+        await load(P.pages[P.cur]);
+      } finally {
+        P.busy = false;
+        S.dirty = false;
+        paint();
+      }
+      toast(`“${P.name}” opened: ${P.pages.length} page${P.pages.length === 1 ? '' : 's'}.`, 4000);
+    });
+  }
+  function end() {
+    if (!P) return;
+    P = null;
+    paint();
+  }
+
+  /* ---------- saving ---------- */
+  async function put(name, blob, label) {
+    if (P.store) return P.store.write(JOB_DIR, name, blob);
+    return (await MS.saveFile(blob, name)).replace(/^saved (to |as )?/, '');
+  }
+  async function saveAll() {
+    if (!P) return;
+    capture();
+    const data = {
+      type: TYPE,
+      v: 1,
+      name: P.name,
+      projectId: P.projectId,
+      cur: P.cur,
+      pages: P.pages.map(p => ({ id: p.id, name: p.name, thumb: p.thumb, payload: p.payload })),
+    };
+    try {
+      const where = await put(jobFile(P.name), new Blob([JSON.stringify(data)], { type: 'application/json' }));
+      S.dirty = false;
+      toast(`“${P.name}” saved: all ${P.pages.length} page${P.pages.length === 1 ? '' : 's'} (${where}).`, 6000);
+    } catch (e) {
+      toast('Could not save the project: ' + (e.message || e), 7000, 'err');
+    }
+  }
+  async function savePage() {
+    if (!P) return;
+    capture();
+    const pg = P.pages[P.cur];
+    try {
+      const where = await put(safe(pg.name) + '.json', new Blob([JSON.stringify(pg.payload)], { type: 'application/json' }));
+      toast(`Page ${P.cur + 1} saved on its own (${where}). “Save project” keeps all the pages together.`, 6000);
+    } catch (e) {
+      toast('Could not save the page: ' + (e.message || e), 7000, 'err');
+    }
+  }
+
+  /* ---------- the bar above the canvas ---------- */
+  function paint() {
+    if (!bar) bar = $('#pageBar');
+    if (!bar) return;
+    bar.hidden = !P;
+    document.body.classList.toggle('has-pages', !!P);
+    if (!P) {
+      bar.innerHTML = '';
+      return;
+    }
+    const n = P.pages.length,
+      dis = P.busy ? 'disabled' : '';
+    bar.innerHTML = `
+      <div class="pg-l">
+        <span class="pg-job" title="${esc(P.name)}">${MS.icon('folder')}<b>${esc(P.name)}</b></span>
+        <button class="btn sm" id="pgSaveAll" ${dis} data-tip="Save every page of this master project|Ctrl+S">${MS.icon('save')}Save project</button>
+        <button class="btn sm" id="pgSaveOne" ${dis} data-tip="Save only the page you are on, as its own file">Save page</button>
+      </div>
+      <div class="pg-c">
+        <button class="ib" id="pgPrev" ${dis || P.cur === 0 ? 'disabled' : ''} data-tip="Previous page">${MS.icon('chevl')}</button>
+        <button class="pg-count" id="pgCount" ${dis} data-tip="See all pages">Page <b>${P.cur + 1}</b> of <b>${n}</b></button>
+        <button class="ib" id="pgNext" ${dis || P.cur === n - 1 ? 'disabled' : ''} data-tip="Next page">${MS.icon('chevr')}</button>
+      </div>
+      <div class="pg-r">
+        <div class="pg-new">
+          <button class="btn sm primary" id="pgNew" ${dis}>${MS.icon('plus')}New page</button>
+          <div class="pg-pop" id="pgPop" hidden>
+            <button class="btn" id="pgBlank">${MS.icon('plus')}Blank page</button>
+            <button class="btn" id="pgCopy">${MS.icon('copy')}Copy page…</button>
+          </div>
+        </div>
+      </div>`;
+    const pop = $('#pgPop', bar);
+    $('#pgSaveAll', bar).onclick = saveAll;
+    $('#pgSaveOne', bar).onclick = savePage;
+    $('#pgPrev', bar).onclick = () => go(P.cur - 1);
+    $('#pgNext', bar).onclick = () => go(P.cur + 1);
+    $('#pgCount', bar).onclick = () => gallery('go');
+    $('#pgNew', bar).onclick = e => {
+      e.stopPropagation();
+      pop.hidden = !pop.hidden;
+    };
+    $('#pgBlank', bar).onclick = () => {
+      pop.hidden = true;
+      addPage(-1);
+    };
+    $('#pgCopy', bar).onclick = () => {
+      pop.hidden = true;
+      gallery('copy');
+    };
+    window.MSI.hydrate(bar);
+  }
+  document.addEventListener('click', e => {
+    const pop = $('#pgPop');
+    if (pop && !pop.hidden && !e.target.closest('.pg-new')) pop.hidden = true;
+  });
+
+  /* ---------- the swipe gallery ---------- */
+  const SCALE = [1, 0.62, 0.42, 0.3],
+    FADE = [1, 0.5, 0.22, 0],
+    GAP = 26;
+  function gallery(mode) {
+    if (!P || P.busy || $('.pg-ov')) return;
+    capture();
+    const pages = P.pages,
+      copy = mode === 'copy';
+    let idx = P.cur;
+    const ov = document.createElement('div');
+    ov.className = 'pg-ov';
+    ov.innerHTML = `
+      <div class="pg-ov-h"><b>${copy ? 'Which page do you want to copy?' : 'All pages'}</b><span class="hint">Swipe, use ← →, or click a page beside the middle one</span></div>
+      <div class="pg-stage" id="pgStage">${pages
+        .map((p, k) => {
+          const m = p.payload.meta,
+            ar = Math.max(0.2, Math.min(5, (m.wPx || m.pxW || 1) / (m.hPx || m.pxH || 1)));
+          return `<div class="pg-card" data-k="${k}" style="--ar:${ar}"><div class="pg-img">${p.thumb ? `<img src="${p.thumb}" alt="" draggable="false">` : '<span class="pg-blank">Blank</span>'}</div><div class="pg-cap">${esc(p.name)}</div></div>`;
+        })
+        .join('')}</div>
+      <div class="pg-dots" id="pgDots"></div>
+      <div class="pg-ov-f">
+        ${copy ? '' : `<button class="btn danger" id="pgDel">Delete this page</button>`}
+        <span class="sp"></span>
+        <button class="btn" id="pgClose">${copy ? 'Cancel' : 'Close'}</button>
+        <button class="btn primary" id="pgOk">${copy ? 'Copy this page' : 'Open this page'}</button>
+      </div>`;
+    document.body.appendChild(ov);
+    const stage = $('#pgStage', ov),
+      cards = $$('.pg-card', ov);
+
+    function layout() {
+      const w = cards[idx].offsetWidth || 300;
+      const x = [0];
+      for (let a = 1; a < SCALE.length; a++) x[a] = x[a - 1] + (w * (SCALE[a - 1] + SCALE[a])) / 2 + GAP;
+      cards.forEach((c, k) => {
+        const off = k - idx,
+          a = Math.abs(off),
+          s = SCALE[Math.min(a, SCALE.length - 1)];
+        c.style.setProperty('--x', Math.sign(off) * x[Math.min(a, x.length - 1)] + 'px');
+        c.style.setProperty('--s', s);
+        c.style.opacity = a < FADE.length ? FADE[a] : 0;
+        c.style.zIndex = 20 - a;
+        c.style.pointerEvents = a > 2 ? 'none' : '';
+        c.classList.toggle('mid', a === 0);
+      });
+      $('#pgDots', ov).innerHTML = `<b>${idx + 1}</b> of ${pages.length}`;
+      const del = $('#pgDel', ov);
+      if (del) del.disabled = pages.length < 2;
+    }
+    const to = k => {
+      idx = Math.max(0, Math.min(pages.length - 1, k));
+      layout();
+    };
+    const finish = () => {
+      document.removeEventListener('keydown', onKey, true);
+      ov.remove();
+    };
+    const ok = () => {
+      finish();
+      if (copy) addPage(idx);
+      else go(idx);
+    };
+    function onKey(e) {
+      const k = e.key;
+      if (!['Escape', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(k)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (k === 'Escape') finish();
+      else if (k === 'Enter') ok();
+      else to(k === 'ArrowLeft' ? idx - 1 : k === 'ArrowRight' ? idx + 1 : k === 'Home' ? 0 : pages.length - 1);
+    }
+    document.addEventListener('keydown', onKey, true);
+    $('#pgOk', ov).onclick = ok;
+    $('#pgClose', ov).onclick = finish;
+    const del = $('#pgDel', ov);
+    if (del)
+      del.onclick = () => {
+        const k = idx;
+        MS.modal({
+          title: 'Delete this page?',
+          med: true,
+          body: `<p>Delete <b>${esc(pages[k].name)}</b> from this master project? This cannot be undone once the project is saved.</p>`,
+          buttons: [
+            { spacer: true },
+            { label: 'Cancel' },
+            {
+              label: 'Delete page',
+              danger: true,
+              action: () => {
+                finish();
+                removePage(k);
+              },
+            },
+          ],
+        });
+      };
+    ov.addEventListener('mousedown', e => {
+      if (e.target === ov) finish();
+    });
+
+    // swipe: the whole row follows your finger / mouse, then settles on the nearest page
+    let sx = null,
+      dx = 0,
+      moved = false,
+      t0 = 0;
+    stage.addEventListener('pointerdown', e => {
+      sx = e.clientX;
+      dx = 0;
+      moved = false;
+      t0 = Date.now();
+      stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener('pointermove', e => {
+      if (sx === null) return;
+      dx = e.clientX - sx;
+      if (Math.abs(dx) > 6) moved = true;
+      if (moved) {
+        stage.classList.add('drag');
+        stage.style.setProperty('--dx', dx + 'px');
+      }
+    });
+    const up = e => {
+      if (sx === null) return;
+      const w = cards[idx].offsetWidth || 300,
+        fast = Date.now() - t0 < 300 && Math.abs(dx) > 40;
+      sx = null;
+      stage.classList.remove('drag');
+      stage.style.setProperty('--dx', '0px');
+      if (moved) to(idx + (fast ? -Math.sign(dx) : -Math.round(dx / (w * 0.7))));
+      else {
+        const c = document.elementFromPoint(e.clientX, e.clientY),
+          card = c && c.closest ? c.closest('.pg-card') : null;
+        if (card) {
+          const k = +card.dataset.k;
+          if (k === idx) ok();
+          else to(k);
+        }
+      }
+    };
+    stage.addEventListener('pointerup', up);
+    stage.addEventListener('pointercancel', up);
+    let wheelAt = 0;
+    ov.addEventListener(
+      'wheel',
+      e => {
+        e.preventDefault();
+        if (Date.now() - wheelAt < 220) return;
+        const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        if (Math.abs(d) < 4) return;
+        wheelAt = Date.now();
+        to(idx + (d > 0 ? 1 : -1));
+      },
+      { passive: false }
+    );
+    // first paint without sliding in from nowhere, then let moves animate
+    stage.classList.add('drag');
+    layout();
+    requestAnimationFrame(() => requestAnimationFrame(() => stage.classList.remove('drag')));
+  }
+
+  /* ---------- hooks ---------- */
+  // opening or starting any other design takes you out of the master project (the pages you did not save are gone, same as any design)
+  MS.onNewDoc(() => {
+    if (!internal) end();
+  });
+  window.addEventListener('DOMContentLoaded', paint);
+
+  MS.pages = {
+    JOB_DIR,
+    TYPE,
+    jobFile,
+    active: () => !!P,
+    internal: () => internal > 0,
+    start,
+    open,
+    end,
+    saveAll,
+    savePage,
+    gallery,
+  };
+})();
+
+;
 /* js/master.js */
 /* Imagination Studio - Master projects.
    File > New master project (or the start page) opens a naming page. A master project is one folder per customer job with the same
    filing system inside every time: Consultations, Assets, Live work in progress, Customer communication.
+   Start makes the folders and opens the job on a blank canvas with several pages (js/pages.js); the whole job saves into
+   "Live work in progress" and can be opened again from the list on this page.
    Add a folder of your own and you are asked whether to copy it into ALL master projects, so every project's filing stays identical.
-   Runs through the local server (MERCH\master-projects\) or, on the web version, in a folder you pick on this PC. */
+   Runs through the local server (MERCH\master projects\) or, on the web version, in a folder you pick on this PC. */
 (function () {
   'use strict';
   const MS = window.MS;
@@ -22517,6 +23051,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const isLocal = () => /^https?:$/.test(location.protocol) && ['localhost', '127.0.0.1'].includes(location.hostname);
   const clean = s => {
     const t = String(s || '')
+      // eslint-disable-next-line no-control-regex
       .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
@@ -22524,9 +23059,18 @@ document.addEventListener('DOMContentLoaded', () => {
     return t && !/^[._]/.test(t) && t.length <= 80 ? t : '';
   };
   const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+  // canvas sizes offered for page 1 (every new page copies the size of the page you are on)
+  const SIZES = [
+    { label: 'Square 12 × 12 in (print)', mode: 'print', w: 12, h: 12 },
+    { label: 'A4 portrait (print)', mode: 'print', w: 8.27, h: 11.69 },
+    { label: 'A4 landscape (print)', mode: 'print', w: 11.69, h: 8.27 },
+    { label: 'Square 1080 × 1080 px (social)', mode: 'social', w: 1080, h: 1080 },
+    { label: 'Story 1080 × 1920 px', mode: 'social', w: 1080, h: 1920 },
+    { label: 'Wide 1920 × 1080 px', mode: 'social', w: 1920, h: 1080 },
+  ];
 
   /* ---------- where the folders live ---------- */
-  // 1) the local server: MERCH\master-projects\<project>\<folders>
+  // 1) the local server: MERCH\master projects\<project>\<folders>
   // the server answers JSON; anything else means this window is still running the older server (it has to be closed and started again)
   async function call(url, opt) {
     let r, t;
@@ -22561,6 +23105,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!j.ok) throw new Error(j.error || 'Could not add the folder.');
       return j.projects;
     },
+    // one file inside <project>\<sub>; the same name is overwritten so the job file stays current
+    async write(project, sub, name, blob) {
+      const q = 'project=' + encodeURIComponent(project) + '&sub=' + encodeURIComponent(sub) + '&name=' + encodeURIComponent(name);
+      let t;
+      try {
+        t = await (await fetch('master-write?' + q, { method: 'POST', headers: H, body: blob })).text();
+      } catch (e) {
+        throw new Error('Could not reach the Imagination Studio server. Is its window still open?');
+      }
+      let j;
+      try {
+        j = JSON.parse(t);
+      } catch (e) {
+        throw new Error('The Imagination Studio server is the older version. Close its black window and start Imagination Studio again.');
+      }
+      if (!j.ok) throw new Error(j.error || 'Could not save into the master project folder.');
+      return j.path;
+    },
+    async read(project, sub, name) {
+      const q = 'project=' + encodeURIComponent(project) + '&sub=' + encodeURIComponent(sub) + '&name=' + encodeURIComponent(name);
+      const r = await fetch('master-read?' + q, { headers: H, cache: 'no-store' });
+      return r.ok ? r.text() : null;
+    },
   };
   // 2) the web version: a folder the user picks (the parent that holds the master projects). The standard folder set is remembered in the browser.
   let rootHandle = null;
@@ -22568,7 +23135,10 @@ document.addEventListener('DOMContentLoaded', () => {
     name: 'folder',
     async root() {
       if (rootHandle) return rootHandle;
-      if (!window.showDirectoryPicker) throw new Error('This browser cannot create folders. Use Chrome or Edge, or start Imagination Studio with its launcher on this PC.');
+      if (!window.showDirectoryPicker)
+        throw new Error(
+          'This browser cannot create folders. Use Chrome or Edge, or start Imagination Studio with its launcher on this PC.'
+        );
       rootHandle = await window.showDirectoryPicker({ id: 'imagination-master', mode: 'readwrite' });
       return rootHandle;
     },
@@ -22609,6 +23179,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return n;
     },
+    async write(project, sub, name, blob) {
+      const h = await this.root();
+      const d = await (await h.getDirectoryHandle(project, { create: true })).getDirectoryHandle(sub, { create: true });
+      const w = await (await d.getFileHandle(name, { create: true })).createWritable();
+      await w.write(blob);
+      await w.close();
+      return h.name + '\\' + project + '\\' + sub + '\\' + name;
+    },
+    async read(project, sub, name) {
+      const h = await this.root();
+      try {
+        const d = await (await h.getDirectoryHandle(project)).getDirectoryHandle(sub);
+        return await (await (await d.getFileHandle(name)).getFile()).text();
+      } catch (e) {
+        if (e.name === 'NotFoundError') return null;
+        throw e;
+      }
+    },
   };
   const backend = () => (isLocal() ? server : local);
 
@@ -22619,6 +23207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const be = backend();
     let info = { template: DEFAULTS.slice(), projects: [], where: '' },
       extras = [],
+      sizeIdx = 0,
       loaded = false;
     const body = document.createElement('div');
     openApi = MS.modal({
@@ -22626,7 +23215,7 @@ document.addEventListener('DOMContentLoaded', () => {
       med: true,
       body,
       onClose: () => (openApi = null),
-      buttons: [{ spacer: true }, { label: 'Close' }, { label: 'Create master project', primary: true, id: 'mpGo', keepOpen: true, action: create }],
+      buttons: [{ spacer: true }, { label: 'Close' }, { label: 'Start', primary: true, id: 'mpGo', keepOpen: true, action: create }],
     });
     const folders = () => [...info.template, ...extras];
 
@@ -22647,7 +23236,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function draw() {
       const keepName = $('#mpName', body) ? $('#mpName', body).value : '';
       body.innerHTML = `
-        <div class="cs-f"><label>Master project name</label><input type="text" id="mpName" class="grow" placeholder="e.g. Smith Plumbing rebrand" spellcheck="false" maxlength="80" value="${esc(keepName)}"></div>
+        <div class="cs-f"><label>Client or project name</label><input type="text" id="mpName" class="grow" placeholder="e.g. Mary Corsie" spellcheck="false" maxlength="80" value="${esc(keepName)}"></div>
+        <div class="cs-f"><label>Page size</label><select id="mpSize" class="grow">${SIZES.map((z, i) => `<option value="${i}" ${i === sizeIdx ? 'selected' : ''}>${esc(z.label)}</option>`).join('')}</select></div>
         <div class="mp-h">Folders created inside it <span class="hint">same for every project</span></div>
         <div class="mp-folders">${folders()
           .map(
@@ -22659,10 +23249,17 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="mp-h">Existing master projects <span class="hint">${esc(info.where || '')}</span></div>
         <div class="mp-list">${
           info.projects.length
-            ? info.projects.map(p => `<div class="mp-p">${MS.icon('folder')}<b>${esc(p.name)}</b><span class="hint">${p.folders.length} folders</span></div>`).join('')
+            ? info.projects
+                .map(
+                  (p, i) =>
+                    `<div class="mp-p">${MS.icon('folder')}<b>${esc(p.name)}</b><span class="hint">${p.folders.length} folders</span><button class="btn sm" data-open="${i}">Open</button></div>`
+                )
+                .join('')
             : '<div class="hint">None yet.</div>'
         }</div>`;
       window.MSI.hydrate(body);
+      $('#mpSize', body).addEventListener('change', e => (sizeIdx = +e.target.value));
+      $$('[data-open]', body).forEach(b => b.addEventListener('click', () => openExisting(info.projects[+b.dataset.open].name)));
       const nm = $('#mpName', body);
       nm.focus();
       nm.addEventListener('keydown', e => e.key === 'Enter' && create());
@@ -22741,15 +23338,38 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const where = await be.create(name, folders());
         openApi && openApi.close();
-        toast(`Master project "${name}" created${where ? ' in ' + where : ''}.`, 4500);
+        MS.pages.start({ name, size: SIZES[sizeIdx], store: store(be, name) });
+        toast(`"${name}" is ready on a blank canvas${where ? ' (folders in ' + where + ')' : ''}.`, 4500);
       } catch (e) {
         go.disabled = false;
         toast(e.message || 'Could not create the master project.');
       }
     }
+    // an existing job: its saved pages if it has any, otherwise a blank canvas to start from
+    async function openExisting(name) {
+      try {
+        const st = store(be, name),
+          txt = await st.read(MS.pages.JOB_DIR, MS.pages.jobFile(name));
+        openApi && openApi.close();
+        if (txt) MS.pages.open(JSON.parse(txt), st);
+        else {
+          MS.pages.start({ name, size: SIZES[sizeIdx], store: st });
+          toast(`"${name}" has no saved pages yet, so you have a blank canvas.`, 4500);
+        }
+      } catch (e) {
+        toast(e.message || 'Could not open that master project.', 5000, 'err');
+      }
+    }
     body.innerHTML = '<div class="hint">Loading…</div>';
     load();
   }
+
+  // what js/pages.js saves through: files inside <project>\<folder>
+  const store = (be, project) => ({
+    project,
+    write: (sub, name, blob) => be.write(project, sub, name, blob),
+    read: (sub, name) => be.read(project, sub, name),
+  });
 
   MS.master = { open };
 })();
@@ -29531,6 +30151,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
       ov.classList.add('out');
       setTimeout(() => ov.remove(), 250);
     };
+    ov.__close = close; // the master project's Start closes this page too
     const onKey = e => {
       if (e.key === 'Escape' && !first) {
         e.stopPropagation();
@@ -29887,6 +30508,12 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
           '-',
           { label: 'Save project', icon: 'save', key: 'Ctrl+S', action: MS.saveProject },
           { label: 'Save project as…', icon: 'save', key: 'Ctrl+Shift+S', action: () => MS.saveProjectAs() },
+          {
+            label: 'Save this page (master project)',
+            icon: 'save',
+            disabled: () => !(MS.pages && MS.pages.active()),
+            action: () => MS.pages.savePage(),
+          },
           { label: 'Save selection to assets…', icon: 'save', action: () => MS.groups && MS.groups.saveSelection() },
           { label: 'Export…', icon: 'export', key: 'Ctrl+E', action: () => MS.openExport() },
           {
