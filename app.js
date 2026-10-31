@@ -474,7 +474,7 @@ window.FONT_CATEGORY_ORDER=["Stencil & Military", "Distressed & Grunge", "Graffi
 /* js/version.js */
 /* Imagination Studio version. ALWAYS count up when something ships, and keep this the only place the number lives.
    3.x = the animation / GIF studio releases. */
-window.IMAGINATION_VERSION = '4.29.1 beta';
+window.IMAGINATION_VERSION = '4.29.2 beta';
 // always visible, bottom right of the editor
 document.addEventListener('DOMContentLoaded', () => {
   const sb = document.getElementById('statusbar');
@@ -28409,6 +28409,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
         'Pick a size on the start screen, or Blank canvas for a huge square.',
         'Tools on the left, settings for the tool along the top, panels on the right.',
         'Everything stays editable — Ctrl+Z undoes anything.',
+        'Every design has pages: use the bar above the canvas to add, copy and flip between them.',
       ],
       steps: [
         {
@@ -29105,6 +29106,7 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
         'Save keeps an editable project; Export makes a picture.',
         'File ▸ Open from saved files shows thumbnails of everything you saved.',
         'File ▸ Client consultation builds a personal slideshow + feedback form to email to a customer.',
+        'File ▸ New master project makes a folder per client and opens it with pages — see Master projects.',
         'File ▸ Promote Imagination sends the promo film to anyone as a private link, by WhatsApp or email.',
         'Browse another folder (such as Downloads) to open files saved by Chrome.',
       ],
@@ -29121,6 +29123,66 @@ ${hist ? 'CONVERSATION SO FAR:\n' + hist + '\n\n' : ''}USER: ${userText}`;
         },
         { sel: '#docName', title: 'Name it', text: 'The name here becomes the default file name for saves and exports.' },
       ],
+    },
+    {
+      id: 'pages',
+      group: 'Organise',
+      title: 'Pages',
+      sum: 'Every design can have several pages. Flip between them, add blank or copied pages, save them together.',
+      bullets: [
+        'Every design is "Page 1 of 1" to begin with. The bar above the canvas has the page controls.',
+        'New page ▸ Blank page adds an empty page the same size. New page ▸ Copy page… lets you pick which page to copy.',
+        'Click "Page 2 of 5" to see all your pages in a swipe gallery: the middle one is large, the ones either side are smaller and see-through. Drag, use ← →, or click a side page. Open this page jumps to it; Delete this page removes it.',
+        'Save project keeps every page together in one file (with just one page it saves as before). Save page saves only the page you are on, as its own file.',
+        'File ▸ Open project or Open from saved files brings all the pages back.',
+      ],
+      steps: [
+        {
+          sel: '#pageBar',
+          title: 'The page bar',
+          text: 'Always above the canvas. Left: Save project (and Save page once you have more than one page). Middle: previous / next with "Page 1 of 1". Right: New page.',
+          place: 'bottom',
+        },
+        {
+          sel: '#pgCount',
+          title: 'See all pages',
+          text: 'Click it to open the swipe gallery of every page. The middle page is large, its neighbours are smaller and see-through. Drag or use the arrow keys to move along.',
+          place: 'bottom',
+        },
+        {
+          sel: '#pgNew',
+          title: 'New page',
+          text: 'Choose Blank page, or Copy page… to pick a page to duplicate. The new page opens straight away, after the page you were on.',
+          place: 'left',
+        },
+      ],
+    },
+    {
+      id: 'master',
+      group: 'Organise',
+      title: 'Master projects (one folder per client)',
+      sum: 'Name a client or job, get a folder with the same filing every time, and a canvas with pages to start on.',
+      bullets: [
+        'File ▸ New master project (or the button on the start page): type the client or project name, choose a page size, click Start.',
+        'It makes a folder with that name (Consultations, Assets, Live work in progress and Customer communication inside) and opens a blank canvas.',
+        "Save project puts all the pages in one file in the job's Live work in progress folder. Save page saves just one page there.",
+        'Reopen a job from the same window: the list at the bottom has an Open button for each one.',
+        'A folder you add can be copied into every master project, so the filing stays the same everywhere.',
+        'The folders live in MERCH\\master projects. On the web version you pick the folder to use on your PC.',
+      ],
+      steps: [],
+    },
+    {
+      id: 'crop',
+      group: 'Organise',
+      title: 'Crop tool and Silhouette maker',
+      sum: 'Cut a piece out of a picture, and see any picture as a silhouette in nine styles.',
+      bullets: [
+        'Crop tool (C): draw round part of a picture, shape or text, freehand or with any shape from the shape menu. The piece you cut out and the part left behind both stay as their own pictures.',
+        'Smart edge: loop loosely round a subject and the cut snaps to its real edge.',
+        'Silhouette maker (left toolbar): select a picture to see it in nine styles (solid, hard contrast, cut-paper, stencil, three and four tones, line art, halftone dots, scan lines). Choose how dark it goes, the ink and paper colours, or invert.',
+      ],
+      steps: [],
     },
     {
       id: 'pictures',

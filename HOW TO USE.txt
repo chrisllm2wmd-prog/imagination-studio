@@ -48,6 +48,24 @@ EXPORT  (Ctrl+E)
   quality (then size) until it fits.  The estimated file size updates as you change things.
   Save > Project (Ctrl+S) keeps every layer editable.
 
+PAGES  (every design)
+  The bar above the canvas shows "Page 1 of 1". New page > Blank page adds an empty page the
+  same size; New page > Copy page... lets you pick a page to copy. Click "Page 2 of 5" to see
+  all pages in a swipe gallery (middle page large, the ones beside it smaller and see-through;
+  drag, arrow keys, or click). Save project keeps all pages together in one file; Save page
+  saves only the page you are on. Open project brings every page back.
+
+MASTER PROJECTS  (File > New master project)
+  Type the client or project name, pick a page size, click Start. It makes the folder
+  MERCH\master projects\<name> with Consultations, Assets, Live work in progress and Customer
+  communication inside, and opens a blank canvas with pages. Save project writes all pages into
+  Live work in progress. The same window lists your jobs, each with an Open button.
+
+CROP TOOL (C) and SILHOUETTE MAKER
+  Crop: draw round part of a picture, shape or text; the cut-out and the rest stay as separate
+  pictures. Smart edge snaps the cut to the subject. Silhouette maker (left toolbar): select a
+  picture and pick one of nine silhouette styles, then darkness, ink and paper colours.
+
 AD WORKSPACE
   "Ad Studio" tab: pick a size, add theme pieces (website files, pictures, notes), choose
   campaign / voice / style, hit "Write & build ad". The ad is real objects on the canvas -
